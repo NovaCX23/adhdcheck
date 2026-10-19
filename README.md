@@ -16,6 +16,7 @@ It is an orientation tool, not a diagnosis: it never shows an ADHD probability o
 5. [research/02-competitors-and-regulatory.md](research/02-competitors-and-regulatory.md): competitors, MDR classification, AI Act, GDPR.
 6. [research/03-tech-stack.md](research/03-tech-stack.md): stack, timing constraints, contracts, 48 h plan.
 7. [research/04-game-design-symptom-mapping.md](research/04-game-design-symptom-mapping.md): symptom-to-game mapping, mini-games, AI choice, scoring code.
-8. [TODO.md](TODO.md): open research and team decisions.
+8. [research/05-healthcare-business-model-canvas.md](research/05-healthcare-business-model-canvas.md): Healthcare Business Model Canvas, all blocks, market size, channels, revenue.
+9. [TODO.md](TODO.md): open research and team decisions.
 
 Rules for everyone: no secrets in this public repo (`.env.example` holds names only), no real personal data, and every figure in the pitch comes from the research files with its source.

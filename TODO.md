@@ -4,10 +4,13 @@ Research in `research/`. Every figure in a pitch must come from those files with
 
 ## Research
 - [x] Tech stack: `research/03-tech-stack.md`
-- [ ] Literature and unmet need: `research/01-literature-unmet-need.md` (agent running)
-- [ ] Competitors and regulatory (MDR Rule 11, AI Act, GDPR): `research/02-competitors-and-regulatory.md` (agent running)
-- [ ] Game design: map ADHD symptom questions to in-game behaviours, the AI to use, the articles behind it: `research/04-game-design-symptom-mapping.md`
-- [ ] Healthcare Business Model Canvas (CIMIT / GAITS, 2026 version, source: https://www.gaits.org/hbmc), all 15 blocks in detail: `research/05-healthcare-business-model-canvas.md`
+- [x] Literature and unmet need: `research/01-literature-unmet-need.md`
+- [x] Competitors and regulatory (MDR Rule 11, AI Act, GDPR): `research/02-competitors-and-regulatory.md`
+- [x] Game design: map ADHD symptom questions to in-game behaviours, the AI to use, the articles behind it: `research/04-game-design-symptom-mapping.md`
+- [x] Team docs: `docs/01-user-needs.md`, `docs/02-specification-cahier-des-charges.md`, `docs/03-progress-plan.md`
+- [ ] Confirm which canvas version the jury scores: the slide shows 15 blocks, the public gaits.org/hbmc guide now shows 18 blocks
+- [ ] Fix the contradictions between research files (listed in the commit history and in docs/02 open decisions)
+- [x] Healthcare Business Model Canvas (CIMIT / GAITS, 2026 version, source: https://www.gaits.org/hbmc), all 15 blocks in detail: `research/05-healthcare-business-model-canvas.md`
   1. Value Promise
   2. Users
   3. Economic Buyers
