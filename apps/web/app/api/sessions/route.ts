@@ -1,10 +1,20 @@
 // Game sessions from the child's device. Logic and tests live in handler.ts.
-// TODO: once the QR session token is checked here (FR-01, NFR-13), switch to
-// createSupabaseSessionStore(createAdminClient()). Until then every save fails with 503 and nothing
-// is stored, so no one can post sessions for a child_id they do not own.
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseRateLimiter, SESSIONS_RATE_LIMIT } from "@/lib/rate-limit";
 import { handleSessionPost } from "./handler";
-import { unconfiguredStore } from "./store";
+import { createSupabaseSessionStore } from "./supabase-store";
 
 export async function POST(request: Request) {
-  return handleSessionPost(request, { store: unconfiguredStore });
+  let admin;
+  try {
+    admin = createAdminClient();
+  } catch {
+    // No Supabase settings (a teammate running the app with no .env.local): store nothing.
+    console.error("[sessions] failed", { error: "storage_unavailable" });
+    return Response.json({ error: "storage_unavailable" }, { status: 503 });
+  }
+  return handleSessionPost(request, {
+    store: createSupabaseSessionStore(admin),
+    rateLimiter: createSupabaseRateLimiter(admin, SESSIONS_RATE_LIMIT),
+  });
 }
