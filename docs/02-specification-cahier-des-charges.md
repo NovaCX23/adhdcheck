@@ -132,6 +132,20 @@ Each FR has an acceptance criterion (AC) that a teammate can test.
 | FR-63 | Mini-game 5 "Treasure Choice": 1 gem now or 2 gems after a wait; total mission time stays constant whichever is chosen (04 section 5); delay values TODO. | Could | Ten choices recorded; total time equal for an all-immediate and an all-wait run. | UN-03, UN-04 |
 | FR-64 | Mini-game 6 "Route Planner" (optional, outside the core): plan a path in fewest moves (04 section 5). | Could | Extra moves and planning time recorded. | UN-03 |
 
+### 4.1c Camera and microphone (D-17, from `research/06-camera-microphone-acquisition.md`)
+
+Evidence for these signals is weak and exploratory (06). They are recorded for research and the demo, and they do not feed `ScoreResult` (PROPOSAL from 06, team to confirm).
+
+| ID | Requirement | Priority | Acceptance criterion | Traces to |
+|---|---|---|---|---|
+| FR-70 | Parent consent screen before play with separate camera and microphone toggles, both off by default, and a child-friendly explanation (text owner P4). | Must | Toggles default to off; no `getUserMedia` call happens before the parent switches one on. | UN-22 |
+| FR-71 | Camera features on the device with `@mediapipe/tasks-vision` Face Landmarker (Apache-2.0), blendshapes off, model and WASM self-hosted: face present ratio, face absent episodes, head off-screen ratio, head motion (06). | Should | On the demo tablet, covering the camera raises face absent episodes; no third-party network request appears in the browser network log. | UN-22 |
+| FR-72 | Microphone features on the device with `@ricky0123/vad-web` (ISC) and Silero VAD (MIT), plus a level meter: speech ratio, speech onsets during instructions, ambient noise level, loud bursts (06). No audio kept, no transcription, no speaker identification. | Could | Speaking during an instruction increments the onset count; the session payload holds numbers only. | UN-22 |
+| FR-73 | Permission denied, unavailable or no response: the game runs unchanged and records the `permission` value. | Must | A full session completes with both permissions refused. | UN-03, UN-22 |
+| FR-74 | Optional `camera` and `microphone` blocks in the session payload, strictly validated: aggregates only, never images, landmarks, audio or text (proposed contract change PC-04). | Must (if FR-71 or FR-72 ships) | The validator rejects a payload containing a landmark array or any string field outside the declared enums. | UN-22 |
+
+Open points from 06, not verified: the licence of the `face_landmarker.task` model file, MediaPipe support on iOS Safari, Silero accuracy on children's voices, the AI Act Art. 5(1)(f) reading for a home product, and the need for a DPIA. No emotion is inferred.
+
 ### 4.2 Scoring service (`packages/scoring`, called from `apps/web/app/api/sessions/`)
 
 | ID | Requirement | Priority | Acceptance criterion | Traces to |
@@ -455,6 +469,7 @@ Table names from 03 section 5. Column lists are PROPOSAL, derived from the contr
 | D-01 | Positioning and class: orientation and referral support, never diagnosis; target IIa maximum, IIa expected, class I only if the output carries no diagnostic or referral purpose | **DECIDED** | Hatem, 2026-10-19 | R-01 to R-05 below |
 | D-02 | Missions are chosen by the parent (later a professional) as general wellbeing activities, never auto-prescribed from the score | **DECIDED** | Hatem, 2026-10-19 | R-03 |
 | D-03a | Result headlines: "A professional assessment is recommended" / "No specific follow-up indicated by this activity"; no ADHD probability, likelihood or severity on the parent screen | **DECIDED** | Hatem, 2026-10-19 | D-03 (supporting lines) |
+| D-17 | Web first, with camera and microphone in the browser game (section 4.1c), processed on the device, aggregates only; native mobile app later | **DECIDED** | Hatem, 2026-10-19 | Whether camera and microphone features ever feed the score (06 proposes no); legal review of the open points in 4.1c |
 
 Residual questions from D-01 and D-02:
 
@@ -495,6 +510,7 @@ Proposed by `research/04-game-design-symptom-mapping.md`. The contracts in secti
 | PC-01 | Rename `ScoreResult.recommendations` to `next_step_text`, filled only with the fixed orientation sentence; no mission IDs from the score | Missions are chosen by the parent or a professional, never auto-prescribed (04 section 0; Rule 22, 02 Part 2.4 item 4) | `ScoreResult` to a new version; scorer, API and dashboard updates; FR-26 then tests the new field | Interface owner (TODO: name), with R2 and R3 | PROPOSED |
 | PC-02 | Add an optional `minigames` array to `SessionMetrics` (one entry per mini-game with `id`, `version`, `params` and `trials` or `results`). The same 04 block also proposes optional `motion` (device-motion RMS per mini-game) and `context` (`on_adhd_medication`, `age_band`) objects | Mini-games 0 and 2 to 5 need somewhere to put their data (04 section 5) | Additive; zod schema update. `context.on_adhd_medication` is health data about the child and needs R5 privacy review (NFR-01, NFR-04) before acceptance | Interface owner (TODO: name), with R1, R2 and R3 | PROPOSED |
 | PC-03 | Additive indicators in `ScoreResult.indicators` (d', anticipation rate, ex-Gaussian parameters) and `vigilance_change` split into named parts | 04 section 7.2 | Additive; scorer and dashboard | Interface owner (TODO: name), with R2 | PROPOSED |
+| PC-04 | Optional `camera` and `microphone` blocks in `SessionMetrics` (fields and units in 06), v1 unchanged | D-17; 06 | Additive; strict schema; R5 privacy review | Interface owner (TODO: name), with R2 and R3 | PROPOSED |
 
 ## 11. Glossary
 

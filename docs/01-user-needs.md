@@ -147,7 +147,7 @@ FR and NFR IDs refer to `docs/02-specification-cahier-des-charges.md`.
 | UN-19 | Must | FR-48 | |
 | UN-20 | Should | FR-37, FR-38 | |
 | UN-21 | Should | FR-35, FR-39 | |
-| UN-22 | Must | FR-41 | NFR-01, NFR-02, NFR-03, NFR-04, NFR-05, NFR-06, NFR-07 |
+| UN-22 | Must | FR-41, FR-70, FR-71, FR-72, FR-73, FR-74 | NFR-01, NFR-02, NFR-03, NFR-04, NFR-05, NFR-06, NFR-07 |
 | UN-23 | Should | FR-45, FR-46, FR-47 | NFR-60 |
 | UN-24 | Should | FR-50 | NFR-05 |
 | UN-25 | Could | FR-39 | NFR-36 |

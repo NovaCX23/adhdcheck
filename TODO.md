@@ -31,7 +31,7 @@ Research in `research/`. Every figure in a pitch must come from those files with
 - [x] DECIDED 2026-10-19: class IIa maximum (class I if achievable). Positioning is orientation, not diagnosis: the product helps parents decide whether to seek a professional assessment.
   - Regulatory reading: orientation or referral output is still Rule 11 class IIa (MDCG 2019-11 rev.1). Class I holds only if the output has no diagnostic or referral purpose.
   - To stay at IIa max: missions are not auto-prescribed from the score, there is no severity grading, and there are no treatment claims.
-- [x] DECIDED 2026-10-19 (D-17): web first, with camera and microphone in the browser game, processed on the device (features only, no video or audio leaves the device); native mobile app later. Research: `research/06-camera-microphone-acquisition.md` (in progress). Spec FRs and NFRs to add when it lands.
+- [x] DECIDED 2026-10-19 (D-17): web first, with camera and microphone in the browser game, processed on the device (features only, no video or audio leaves the device); native mobile app later. Research: `research/06-camera-microphone-acquisition.md`. Requirements FR-70 to FR-74 added to `docs/02` section 4.1c; contract extension PC-04 proposed.
 - [ ] Work split confirmed with names: `docs/04-work-split.md`
 - [ ] Final output wording for parents (proposal: "a professional assessment is recommended" or "no specific follow-up indicated by this activity"; never "ADHD likely")
 - [ ] Pricing and subscription content

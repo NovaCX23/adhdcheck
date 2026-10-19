@@ -8,7 +8,7 @@ Status: PROPOSAL, version 0.1, 2026-10-19. The team confirms names and swaps rol
 |---|---|---|
 | D-01 | Orientation tool, not diagnosis. Expected class IIa maximum. The parent sees "A professional assessment is recommended" or "No specific follow-up indicated by this activity". Never an ADHD probability or a severity. | 2026-10-19 |
 | D-02 | Missions are chosen by the parent or a professional. They are never assigned from the score. | 2026-10-19 |
-| D-17 | **Web first, WITH camera and microphone** in the browser game. A native mobile app comes later. Camera and microphone are processed on the device. Only aggregate features (counts, durations) leave the device: no video, no audio, no frames. If permission is denied, the game still works without them. Details: `research/06-camera-microphone-acquisition.md` (in progress). | 2026-10-19 |
+| D-17 | **Web first, WITH camera and microphone** in the browser game. A native mobile app comes later. Camera and microphone are processed on the device. Only aggregate features (counts, durations) leave the device: no video, no audio, no frames. If permission is denied, the game still works without them. Details: `research/06-camera-microphone-acquisition.md`; requirements FR-70 to FR-74 in `docs/02` section 4.1c. P2 owns them; the 06 file holds an 8-hour plan for one developer. | 2026-10-19 |
 
 ## The team: 4 people (5th person splits P3)
 
