@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useState } from "react";
 import type { BridgeWaitResult } from "@adhdcheck/game";
 
-// Phaser needs the browser, so the canvas is never rendered on the server.
+// The 3D game (three.js, WebGL) needs the browser, so the canvas is never rendered on the server.
 const BridgeWaitCanvas = dynamic(() => import("./BridgeWaitCanvas"), { ssr: false });
 
 export function BridgeWaitClient() {
