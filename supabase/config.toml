@@ -1,0 +1,22 @@
+# Local Supabase settings for `npx supabase@latest start`, `db reset` and `test db`.
+# Only the settings we rely on are listed; everything else uses the CLI defaults
+# (run `npx supabase@latest init` in an empty folder to see the full template).
+# No key or connection string here: real values live in apps/web/.env.local and Vercel.
+project_id = "adhdcheck"
+
+[api]
+port = 54321
+schemas = ["public", "graphql_public"]
+
+[db]
+port = 54322
+# Check it matches the cloud project (Dashboard, Settings, Infrastructure) before linking.
+major_version = 17
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[auth]
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["http://localhost:3000"]
