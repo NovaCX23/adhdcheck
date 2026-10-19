@@ -16,7 +16,9 @@ function row(score: unknown) {
   };
 }
 
-const { schema_version: _v, session_id: _s, ...scoreColumns } = validScoreResult;
+const scoreColumns: Record<string, unknown> = { ...validScoreResult };
+delete scoreColumns.schema_version;
+delete scoreColumns.session_id;
 
 describe("toSessionResult (FR-33, FR-38)", () => {
   it("turns a session row with its score into a contract-checked ScoreResult", () => {
