@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScoreResultSchema, type ScoreResult, type SessionMetrics } from "@adhdcheck/contracts";
 import { validSessionMetrics } from "../../../../../packages/contracts/src/fixtures/session-metrics.valid";
 import { handleSessionPost } from "./handler";
-import type { SessionStore } from "./store";
+import { UnknownChildError, type SessionStore } from "./store";
 
 // In-memory store: same contract as the Supabase store, no database needed.
 function memoryStore() {
@@ -110,6 +110,20 @@ describe("POST /api/sessions", () => {
     expect(logged).not.toContain("Test Fox");
     expect(logged).not.toContain(validSessionMetrics.child_id);
     expect(logged).not.toContain(validSessionMetrics.session_id);
+  });
+
+  it("answers 422 for a child that does not exist and returns no result", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const unknownChild: SessionStore = {
+      async save() {
+        throw new UnknownChildError();
+      },
+    };
+    const res = await post(validSessionMetrics, unknownChild);
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: "unknown_child" });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(validSessionMetrics.child_id);
   });
 
   it("answers 503 when storage fails, logs it, and does not return a result", async () => {
