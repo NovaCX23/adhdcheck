@@ -61,6 +61,7 @@ Copy `.env.example` to `apps/web/.env.local` (gitignored) and fill the values th
 | `STRIPE_SECRET_KEY` | server only, Stripe test mode |
 | `STRIPE_WEBHOOK_SECRET` | server only |
 | `RESEND_API_KEY` | server only |
+| `DEMO_PARENT_EMAIL` | server only: the account that may use Reset demo (`POST /api/demo/reset`) |
 
 The names follow the usual convention of each provider; confirm them against the provider quickstart when you wire the service.
 
@@ -68,6 +69,7 @@ The names follow the usual convention of each provider; confirm them against the
 
 - The **waitlist** (`POST /api/waitlist`) is **not persisted yet**: it validates the address and returns `ok`; nothing is stored and no email is sent. The address is not logged either (only language and time). Storing it in Supabase is a TODO (Person 3).
 - `scoreSession` returns `insufficient_data` for every session until Person 2 writes the rules. No thresholds exist yet.
+- The **demo seed** (`seed_demo`, used by Reset demo) writes synthetic scores in SQL, not scorer output, and its reason lines are placeholders until Person 4 supplies the text.
 - `/play` draws a blank "Luma" canvas. No game logic.
 - `SessionMetrics` makes `x` and `y` required on every trial, as in the spec, but an omission has no tap position. Person 1 and Person 2 must agree what to send (contracts change by team agreement only).
 
