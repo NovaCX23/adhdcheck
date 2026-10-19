@@ -1,4 +1,5 @@
 import { hashPlayCode, isPlayCode, newPlayCode, PLAY_LINK_LIFETIME_MS } from "../../../lib/play-link";
+import { isUuid } from "../../../lib/uuid";
 
 // Play links (FR-01, FR-32): the parent creates one for a child, the QR page (Person 4) turns the code
 // into /play/<code>, and the play page (Person 1) looks the code up to get the child_id.
@@ -12,8 +13,6 @@ export interface PlayLinkStore {
 }
 
 type CreateDeps = { store: PlayLinkStore; getParentId(): Promise<string | null>; now?: () => Date };
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function fail(status: number, error: string) {
   return Response.json({ error }, { status, headers: { "cache-control": "no-store" } });
@@ -36,7 +35,7 @@ export async function handleCreatePlayLink(request: Request, deps: CreateDeps): 
   }
   const fields = body !== null && typeof body === "object" ? Object.keys(body) : [];
   const childId = (body as { child_id?: unknown } | null)?.child_id;
-  if (fields.length !== 1 || typeof childId !== "string" || !UUID.test(childId)) return fail(400, "invalid_input");
+  if (fields.length !== 1 || !isUuid(childId)) return fail(400, "invalid_input");
 
   const { code, codeHash } = newPlayCode();
   const expiresAt = new Date((deps.now ?? (() => new Date()))().getTime() + PLAY_LINK_LIFETIME_MS);
