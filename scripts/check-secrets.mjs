@@ -32,11 +32,12 @@ for (const line of diff.split("\n")) {
   const text = line.slice(1);
   if (/^[A-Z0-9_]+=\s*$/.test(text)) continue; // `.env.example` name with no value
   // Broad words are skipped on comment lines, on this check's own npm script line, and on a code line
-  // ending with `// check-secrets: allow` (auth code names passwords and tokens; read the line first);
+  // ending with `// check-secrets: allow` or, in SQL, `-- check-secrets: allow` (auth code names
+  // passwords and tokens, SQL grants name service_role; read the line first);
   // hard key shapes are still checked there.
   const broadExempt =
     /^\s*(#|\/\/)/.test(text) ||
-    /\/\/ check-secrets: allow\s*$/.test(text) ||
+    /(\/\/|--) check-secrets: allow\s*$/.test(text) ||
     /"check:secrets":\s*"node scripts\/check-secrets\.mjs"/.test(text);
   if (HARD.some((re) => re.test(text))) problems.push(`${file}: secret-shaped value`);
   else if (!broadExempt && !file.endsWith(".md") && BROAD.test(text)) problems.push(`${file}: contains a secret-like word (read the line, then unstage or reword)`);
