@@ -1,0 +1,201 @@
+@import "tailwindcss";
+
+/* Night-forest palette: dark story sections, warm cream for the "real life" sections.
+   Firefly amber is the single CTA color across the page. */
+:root {
+  --night: #0b1430;
+  --night-2: #13204a;
+  --night-3: #1c2c5e;
+  --moon: #eef1ff;
+  --moon-muted: #b4bce0;
+  --glow: #fbbf24;
+  --glow-strong: #f59e0b;
+  --on-glow: #1f1400;
+  --cream: #fff8ec;
+  --cream-2: #fdecd2;
+  --ink: #1f1b3a;
+  --ink-muted: #4f4b6b;
+  --leaf: #10b981;
+  --leaf-soft: #d1fae5;
+  --berry: #e11d48;
+  --berry-soft: #ffe4e6;
+}
+
+@theme inline {
+  --color-night: var(--night);
+  --color-night-2: var(--night-2);
+  --color-night-3: var(--night-3);
+  --color-moon: var(--moon);
+  --color-moon-muted: var(--moon-muted);
+  --color-glow: var(--glow);
+  --color-glow-strong: var(--glow-strong);
+  --color-on-glow: var(--on-glow);
+  --color-cream: var(--cream);
+  --color-cream-2: var(--cream-2);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-leaf: var(--leaf);
+  --color-leaf-soft: var(--leaf-soft);
+  --color-berry: var(--berry);
+  --color-berry-soft: var(--berry-soft);
+  --font-display: var(--font-fredoka);
+  --font-sans: var(--font-nunito);
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+:focus-visible {
+  outline: 3px solid var(--glow);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+/* In the components layer so Tailwind utilities (bg-night, p-0) can override. */
+@layer components {
+/* Clay-style surfaces for light sections */
+.clay {
+  background: #fff;
+  border: 3px solid var(--cream-2);
+  border-radius: 1.75rem;
+  box-shadow:
+    0 14px 30px -14px rgb(31 27 58 / 0.25),
+    inset 0 -4px 0 0 rgb(31 27 58 / 0.04);
+}
+
+.btn-glow {
+  background: var(--glow);
+  color: var(--on-glow);
+  box-shadow:
+    0 0 0 0 rgb(251 191 36 / 0.6),
+    0 10px 28px -8px rgb(245 158 11 / 0.7),
+    inset 0 -4px 0 0 rgb(0 0 0 / 0.12);
+  transition:
+    transform 200ms ease-out,
+    background-color 200ms ease-out,
+    box-shadow 200ms ease-out;
+}
+.btn-glow:hover {
+  background: #fcd34d;
+  box-shadow:
+    0 0 0 6px rgb(251 191 36 / 0.18),
+    0 14px 34px -8px rgb(245 158 11 / 0.8),
+    inset 0 -4px 0 0 rgb(0 0 0 / 0.12);
+}
+.btn-glow:active {
+  transform: scale(0.97);
+}
+}
+
+/* Fireflies */
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(14px, -18px);
+  }
+  66% {
+    transform: translate(-10px, -6px);
+  }
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  45%,
+  60% {
+    opacity: 1;
+  }
+}
+.firefly {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #fde68a;
+  box-shadow:
+    0 0 8px 3px rgb(253 230 138 / 0.8),
+    0 0 22px 8px rgb(251 191 36 / 0.35);
+  animation:
+    drift var(--d, 9s) ease-in-out infinite,
+    blink var(--b, 3.4s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+  pointer-events: none;
+}
+
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+.float-soft {
+  animation: float-soft 6s ease-in-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+.pulse-ring {
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+
+/* Hidden only once JS is running, so content stays visible without it */
+html.js .reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 600ms ease-out,
+    transform 600ms ease-out;
+}
+html.js .reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .firefly,
+  .float-soft,
+  .pulse-ring {
+    animation: none;
+  }
+  .firefly {
+    opacity: 0.7;
+  }
+  html.js .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
