@@ -10,7 +10,7 @@ schemas = ["public", "graphql_public"]
 
 [db]
 port = 54322
-# Check it matches the cloud project (Dashboard, Settings, Infrastructure) before linking.
+# Matches the cloud project (Postgres 17.11, checked 2026-10-20 in Dashboard, Settings, Infrastructure).
 major_version = 17
 
 [db.seed]
