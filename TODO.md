@@ -24,9 +24,11 @@ Research in `research/`. Every figure in a pitch must come from those files with
   14. Revenue Stream
   15. Investor Economics
 
-## Team decisions (open)
-- [ ] Intended purpose wording and device class (class I is unlikely under MDR Rule 11 if the output supports a diagnosis)
-- [ ] Output wording for parents: "follow-up recommended" band rather than "ADHD likely"
+## Team decisions
+- [x] DECIDED 2026-10-19: class IIa maximum (class I if achievable). Positioning is orientation, not diagnosis: the product helps parents decide whether to seek a professional assessment.
+  - Regulatory reading: orientation or referral output is still Rule 11 class IIa (MDCG 2019-11 rev.1). Class I holds only if the output has no diagnostic or referral purpose.
+  - To stay at IIa max: missions are not auto-prescribed from the score, there is no severity grading, and there are no treatment claims.
+- [ ] Final output wording for parents (proposal: "a professional assessment is recommended" or "no specific follow-up indicated by this activity"; never "ADHD likely")
 - [ ] Pricing and subscription content
 - [ ] Gadget: which one, and is it a medical device itself
 
