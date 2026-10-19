@@ -469,6 +469,7 @@ Table names from 03 section 5. Column lists are PROPOSAL, derived from the contr
 | D-01 | Positioning and class: orientation and referral support, never diagnosis; target IIa maximum, IIa expected, class I only if the output carries no diagnostic or referral purpose | **DECIDED** | Hatem, 2026-10-19 | R-01 to R-05 below |
 | D-02 | Missions are chosen by the parent (later a professional) as general wellbeing activities, never auto-prescribed from the score | **DECIDED** | Hatem, 2026-10-19 | R-03 |
 | D-03a | Result headlines: "A professional assessment is recommended" / "No specific follow-up indicated by this activity"; no ADHD probability, likelihood or severity on the parent screen | **DECIDED** | Hatem, 2026-10-19 | D-03 (supporting lines) |
+| D-18 | Hackathon scope is one web app only: the game runs inside it at `/play` in the tablet or phone browser; native mobile and tablet apps after the hackathon | **DECIDED** | Hatem, 2026-10-19 | None |
 | D-17 | Web first, with camera and microphone in the browser game (section 4.1c), processed on the device, aggregates only; native mobile app later | **DECIDED** | Hatem, 2026-10-19 | Whether camera and microphone features ever feed the score (06 proposes no); legal review of the open points in 4.1c |
 
 Residual questions from D-01 and D-02:

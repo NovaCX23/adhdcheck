@@ -1,6 +1,8 @@
-# Person 4: Clinical, regulatory and pitch
+# Shared duty: texts, claims and pitch
 
-You own what the product says and why it is safe to say it. Every text a parent or child reads, the consent screens, the intended purpose, the evidence, the business canvas, and the pitch.
+Everyone on the team is technical, so this is not a fifth role. One owner (TODO: name) holds it on top of their build work, and every member follows it. The owner writes or approves every text a user sees; the others paste those texts unchanged.
+
+The owner covers what the product says and why it is safe to say it. Every text a parent or child reads, the consent screens, the intended purpose, the evidence, the business canvas, and the pitch.
 
 ## Read first (30 minutes)
 
