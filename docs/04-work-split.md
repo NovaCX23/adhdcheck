@@ -10,6 +10,13 @@ Status: PROPOSAL, version 0.1, 2026-10-19. The team confirms names and swaps rol
 | D-02 | Missions are chosen by the parent or a professional. They are never assigned from the score. | 2026-10-19 |
 | D-17 | **Web first, WITH camera and microphone** in the browser game. A native mobile app comes later. Camera and microphone are processed on the device. Only aggregate features (counts, durations) leave the device: no video, no audio, no frames. If permission is denied, the game still works without them. Details: `research/06-camera-microphone-acquisition.md`; requirements FR-70 to FR-74 in `docs/02` section 4.1c. P2 owns them; the 06 file holds an 8-hour plan for one developer. | 2026-10-19 |
 
+## Your own brief (one page each)
+
+- Person 1, game: [docs/team/person-1-game.md](team/person-1-game.md)
+- Person 2, sensors and scoring: [docs/team/person-2-sensors-scoring.md](team/person-2-sensors-scoring.md)
+- Person 3, backend and parent web app: [docs/team/person-3-backend-webapp.md](team/person-3-backend-webapp.md)
+- Person 4, clinical, regulatory and pitch: [docs/team/person-4-clinical-regulatory-pitch.md](team/person-4-clinical-regulatory-pitch.md)
+
 ## The team: 4 people (5th person splits P3)
 
 | Person | Role | Owns | Folder | Requirements |
@@ -27,7 +34,7 @@ PROPOSAL: Hatem takes P4, because the regulatory and clinical wording is his fie
 
 | Person | Task | Done when |
 |---|---|---|
-| P1 | Scaffold Phaser 4 + TypeScript in `packages/game`. Build a bare Lantern Watch loop (go/no-go) that timestamps with `requestAnimationFrame` and `pointerdown` (`research/03-tech-stack.md`, section 4). | A tap on the demo tablet logs a trial with a reaction time |
+| P1 | Scaffold Phaser 4 + TypeScript in `packages/game`. Build a bare Lantern Watch loop (go/no-go) that timestamps with `requestAnimationFrame` and `pointerdown` (`research/03-tech-stack.md`, section 2). | A tap on the demo tablet logs a trial with a reaction time |
 | P2 | Write `packages/contracts` with `SessionMetrics` v1 and `ScoreResult` v1, copied from `docs/02` section 7. Add a test fixture. Start a camera probe: open the camera in the browser and print face present or absent. | The contract is merged; the probe runs on the demo tablet |
 | P3 | Create the Supabase project in **Frankfurt** (the region cannot be changed later). Write the first migration (parents, children, sessions, scores) with row-level security. Scaffold Next.js with login. | A parent can sign up and sees an empty dashboard |
 | P4 | Write the consent screen text (parent first, then the child-friendly camera and microphone explanation). Freeze the two result headlines. Ask the organisers which canvas version the jury scores (15 or 18 blocks). | Texts merged in `docs/`; jury answer recorded in `TODO.md` |
