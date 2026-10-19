@@ -9,6 +9,8 @@ It is an orientation tool, not a diagnosis: it never shows an ADHD probability o
 
 ## Start here
 
+**Building? Read [docs/04-work-split.md](docs/04-work-split.md) first: who does what, and your first 2 hours.**
+
 1. [docs/01-user-needs.md](docs/01-user-needs.md): who the users are and what they need (UN-xx), with sources and traceability.
 2. [docs/02-specification-cahier-des-charges.md](docs/02-specification-cahier-des-charges.md): the build reference: intended purpose, scope, FR and NFR with acceptance criteria, architecture, the JSON contracts, data model, open decisions.
 3. [docs/03-progress-plan.md](docs/03-progress-plan.md): roles, milestones, progress tracker, definition of done, demo checklist, working rules.
