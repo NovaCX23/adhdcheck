@@ -75,11 +75,11 @@ Status values: `todo`, `doing`, `done`. Update in the same PR that changes the s
 | FR-39 | Result without manual refresh | R3 with R4 | Could | doing | Realtime on scores: https://github.com/mateidragomir74/adhdcheck/pull/8 |
 | FR-40 | Shareable result image | R4 | Could | todo | |
 | FR-41 | Delete child and all data | R3 | Must | doing | https://github.com/mateidragomir74/adhdcheck/pull/4, https://github.com/mateidragomir74/adhdcheck/pull/7 |
-| FR-42 | Landing page with QR | R4 | Should | todo | |
+| FR-42 | Landing page with QR | R4 | Should | todo | waitlist storage: https://github.com/mateidragomir74/adhdcheck/pull/9 |
 | FR-43 | Parent questionnaire (NICHQ Vanderbilt), permission TODO | R4 with R5 | Should | todo | |
-| FR-45 | Stripe Checkout subscription | R4 | Should | todo | |
-| FR-46 | Customer Portal | R4 | Should | todo | |
-| FR-47 | Stripe webhook | R4 | Should | todo | |
+| FR-45 | Stripe Checkout subscription | R4 | Should | doing | API: https://github.com/mateidragomir74/adhdcheck/pull/10 |
+| FR-46 | Customer Portal | R4 | Should | doing | API: https://github.com/mateidragomir74/adhdcheck/pull/10 |
+| FR-47 | Stripe webhook | R4 | Should | doing | https://github.com/mateidragomir74/adhdcheck/pull/10 |
 | FR-48 | Result and next step never paywalled | R4 | Must | todo | |
 | FR-50 | Emails without result data | R4 | Should | todo | |
 | FR-55 | Demo seed, 4 weeks | R3 with R2 | Must | doing | https://github.com/mateidragomir74/adhdcheck/pull/7 (synthetic scores until the scorer exists) |
