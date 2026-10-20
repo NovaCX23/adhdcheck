@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SCORE_DISCLAIMER, type ScoreResult } from "@adhdcheck/contracts";
 import { BAND_TEXT, S } from "../app/parent/strings";
 import { formatDate } from "../app/parent/_components/ResultCard";
-import { buildReport, isPaidStatus, renderReportPdf } from "./report";
+import { buildReport, renderReportPdf } from "./report";
 import { TEST_STARTED as STARTED, pdfText, sessionResult } from "./report-test-helpers";
 
 // D-05 / FR-48: the downloadable parent report. It holds only what the result card already shows.
@@ -14,6 +14,12 @@ async function textOf(band: ScoreResult["band"], nickname = "Demo Fox") {
   const model = buildReport(sessionResult(band), nickname);
   expect(model).not.toBeNull();
   return pdfText(await renderReportPdf(model!));
+}
+
+function buildReportEmailModel() {
+  const model = buildReport(sessionResult("no_flag"), "Demo Fox");
+  expect(model).not.toBeNull();
+  return model!;
 }
 
 describe("parent report PDF (D-05, FR-48)", () => {
@@ -28,6 +34,20 @@ describe("parent report PDF (D-05, FR-48)", () => {
     expect(text).toContain(SCORE_DISCLAIMER);
     expect(text).toContain(S.result.nextStep);
     expect(text).toContain(S.result.nextStepText);
+  });
+
+  it("R3-P3 renders byte-identical PDFs for the same session at different times (the email idempotency payload must not change)", async () => {
+    const model = buildReportEmailModel();
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-10-20T10:00:00Z"));
+      const first = await renderReportPdf(model);
+      vi.setSystemTime(new Date("2026-10-21T11:22:33Z"));
+      const second = await renderReportPdf(model);
+      expect(Buffer.from(second).equals(Buffer.from(first))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows the game measures as game measures, as on the result card", async () => {
@@ -78,18 +98,5 @@ describe("parent report PDF (D-05, FR-48)", () => {
 
   it("names the file by the session date, never by the nickname", () => {
     expect(buildReport(sessionResult("no_flag"), "Demo Fox")!.fileName).toBe("report-2026-10-12.pdf");
-  });
-});
-
-describe("isPaidStatus", () => {
-  it.each([
-    ["active", true],
-    ["trialing", true],
-    ["past_due", false],
-    ["canceled", false],
-    ["incomplete", false],
-    [null, false],
-  ] as const)("%s gives %s", (status, paid) => {
-    expect(isPaidStatus(status)).toBe(paid);
   });
 });

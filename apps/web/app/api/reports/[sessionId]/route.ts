@@ -1,6 +1,6 @@
-// Parent report download, paid (D-05, FR-48). Logic and tests in ../handlers.ts.
+// Parent report download, paid once per report (D-05, D-05b, FR-48). Logic and tests in ../handlers.ts.
 import type { NextRequest } from "next/server";
-import { getSessionResult, getSubscriptionStatus } from "@/lib/data/parent";
+import { getReportPurchase, getSessionResult } from "@/lib/data/parent";
 import { renderReportPdf } from "@/lib/report";
 import { createClient } from "@/lib/supabase/server";
 import { handleReportDownload } from "../handlers";
@@ -19,7 +19,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/reports
       if (error) throw new Error(`read child failed: ${error.message}`);
       return data ? { result, nickname: data.nickname as string } : null;
     },
-    getSubscriptionStatus: () => getSubscriptionStatus(supabase),
+    isReportPaid: async (id) => (await getReportPurchase(supabase, id))?.status === "paid",
     renderPdf: renderReportPdf,
   });
 }

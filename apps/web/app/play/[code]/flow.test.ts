@@ -103,3 +103,35 @@ describe("runPlayFlow", () => {
     expect(calls.upload).toBe(1);
   });
 });
+
+describe("runPlayFlow, leaving the page (R3-L1)", () => {
+  it("uploads nothing and shows nothing once the signal is aborted during play", async () => {
+    const controller = new AbortController();
+    let finish: (m: SessionMetrics) => void = () => {};
+    const { deps, screens, calls } = setup({
+      play: () =>
+        new Promise<SessionMetrics>((resolve) => {
+          finish = resolve;
+        }),
+    });
+    const flow = runPlayFlow("code-1", deps, controller.signal);
+    await new Promise((r) => setTimeout(r, 0));
+    controller.abort();
+    const shownBefore = screens.length;
+    finish(metrics);
+    await flow;
+    expect(calls.upload).toBe(0);
+    expect(screens.length).toBe(shownBefore);
+  });
+
+  it("does not start playing when the page left before the start tap", async () => {
+    const controller = new AbortController();
+    const { deps, calls } = setup({
+      waitForStart: async () => {
+        controller.abort();
+      },
+    });
+    await runPlayFlow("code-1", deps, controller.signal);
+    expect(calls.play).toBe(0);
+  });
+});

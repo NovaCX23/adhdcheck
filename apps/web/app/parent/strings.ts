@@ -42,20 +42,39 @@ export const S = {
     lastResult: "Last result",
     noResult: "No game played yet",
   },
+  // FR-50 weekly summary email, placeholder wording (TODO texts owner).
+  email: {
+    title: "Email summary",
+    hint: "Get a short email with a link back to this page. It never contains results.",
+    send: "Email me this week's summary",
+    sent: "Sent. Check your inbox.",
+    skipped: "Email is not set up yet.",
+    failed: "The email could not be sent.",
+  },
   demo: { label: "Demo account", reset: "Reset demo", resetting: "Resetting…", done: "Demo data restored." },
   billing: {
-    title: "Family plan",
-    active: "Your plan is active.",
-    subscribe: "Subscribe (test mode)",
-    manage: "Manage plan",
-    unavailable: "Billing is not set up yet.",
+    unavailable: "Payment is not available right now. Please try again later.",
   },
-  // D-05 (DECIDED, Hatem, 2026-10-20): only the report download is paid. Placeholder wording for the
-  // texts owner (shared-texts-claims-pitch.md).
+  // D-05 and D-05b (DECIDED, Hatem, 2026-10-20): only the detailed report is paid, 9.99 EUR, one-off per
+  // report, emailed to the parent who paid. offerTitle and sentAndHere are the owner's words; the rest is
+  // placeholder wording for the texts owner (shared-texts-claims-pitch.md). offerText lists only what
+  // lib/report.ts buildReport puts in the PDF.
   report: {
+    offerTitle: "Get the detailed report, 9.99 EUR, one-off",
+    offerText:
+      "A PDF of this session to bring to an appointment: the date, the result with the note that it is not a diagnosis, the game measures and the next step. You pay once for this report. Nothing renews.",
+    offerFree: "The result and the next step above stay free, whether you buy the report or not.",
+    buy: "Get the report",
+    buying: "Opening the payment page…",
+    // R3-P1: placeholder wording for the texts owner (TODO), shown while a Checkout was opened and not paid.
+    inProgress: "A payment for this report was started and is not confirmed yet.",
+    resume: "Continue the payment",
+    confirming: "Thank you. We are confirming the payment. This can take a moment; you can reload this page.",
+    sentAndHere: "Sent to your email, and available here",
+    availableHere: "Your report is available here.",
+    checking: "Checking the report…",
     download: "Download the report (PDF)",
     preparing: "Preparing the report…",
-    paywall: "Downloading the report comes with the family plan. The result, the next step, missions and progress stay free.",
   },
   session: {
     title: "Play a game",

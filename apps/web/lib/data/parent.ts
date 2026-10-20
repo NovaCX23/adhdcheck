@@ -30,7 +30,7 @@ export type MissionRow = {
   done_at: string | null;
 };
 
-const SESSION_COLUMNS =
+export const SESSION_COLUMNS =
   "id, child_id, started_at, duration_ms, device, scores (scoring_method, validated, indicators, flags, band, data_quality, reasons, recommendations, disclaimer)";
 const MISSION_COLUMNS = "id, child_id, mission_key, status, created_at, done_at";
 
@@ -144,11 +144,31 @@ export async function giveProcessingConsent(client: SupabaseClient): Promise<voi
   check(result, "record consent");
 }
 
-// FR-45, FR-48: the parent's Stripe subscription status ("active", "trialing", "past_due", "canceled", ...),
-// or null before any checkout. Never gate the result card, next step or deletion on it.
-export async function getSubscriptionStatus(client: SupabaseClient): Promise<string | null> {
-  const result = await client.from("subscriptions").select("status").maybeSingle();
-  return check<{ status: string } | null>(result, "read subscription")?.status ?? null;
+// D-05b, FR-48: the purchase of one report by the logged-in parent (report_purchases, RLS: own rows only),
+// the paid one first, or null before any checkout. Never gate the result card, next step or deletion on it.
+export type ReportPurchase = { status: "pending" | "paid"; emailed_at: string | null };
+export async function getReportPurchase(client: SupabaseClient, sessionId: string): Promise<ReportPurchase | null> {
+  const result = await client
+    .from("report_purchases")
+    .select("status, emailed_at")
+    .eq("session_id", sessionId)
+    .in("status", ["pending", "paid"]) // failed and expired attempts are history, not the state of the report
+    .order("paid_at", { ascending: false, nullsFirst: false })
+    .limit(1);
+  return check<ReportPurchase[]>(result, "read report purchase")[0] ?? null;
+}
+
+// R3-P1: the Stripe Checkout Session ids of this parent's pending purchases of one report, newest first, so a
+// second checkout can be refused or resumed. RLS: own rows only.
+export async function listPendingCheckoutIds(client: SupabaseClient, sessionId: string): Promise<string[]> {
+  const result = await client
+    .from("report_purchases")
+    .select("stripe_checkout_session_id")
+    .eq("session_id", sessionId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(5); // a Checkout lives 24 hours; failed and expired rows are not listed, so this stays short
+  return check<{ stripe_checkout_session_id: string }[]>(result, "list pending checkouts").map((r) => r.stripe_checkout_session_id);
 }
 
 // FR-37: missions are always chosen by the parent; nothing here reads a score (NFR-52).

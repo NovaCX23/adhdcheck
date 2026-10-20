@@ -140,9 +140,12 @@ export interface WorldOptions {
   /** The decorative lily pads and lotus in the near river. Default true. Route Planner turns them off: its board
    * of pads sits there, and a decorative pad would read as one more pad to tap. */
   lilyPads?: boolean;
+  /** false: the bridge posts carry no lamp (Lantern Watch puts its own lanterns on the deck). Default true. */
+  postLamps?: boolean;
 }
 
 export function buildWorld(scene: Scene, grad: DataTexture, outlineMat: MeshBasicMaterial, opts: WorldOptions = {}): World {
+  const postLamps = opts.postLamps ?? true;
   const rnd = mulberry32(2024);
   const toon = (c: number) => new MeshToonMaterial({ color: new Color(c), gradientMap: grad });
   const white = toon(0xffffff); // instanced meshes tint it per instance
@@ -447,6 +450,15 @@ export function buildWorld(scene: Scene, grad: DataTexture, outlineMat: MeshBasi
       bridge.add(post);
       const base = new Mesh(baseGeo, capMat);
       base.position.set(x, top + 0.02, z);
+      if (!postLamps) {
+        // Plain post: a small cap only, no glass and no halo.
+        const knob = new Mesh(capGeo, capMat);
+        knob.scale.set(0.6, 0.6, 0.6);
+        knob.position.set(x, top + 0.1, z);
+        outline(knob, outlineMat, 1.12);
+        bridge.add(base, knob);
+        continue;
+      }
       const lamp = new Mesh(glassGeo, glass);
       lamp.position.set(x, top + 0.2, z);
       outline(lamp, outlineMat, 1.12);
