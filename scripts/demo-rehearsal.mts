@@ -1,4 +1,4 @@
-﻿// Demo rehearsal: walks the showcase flow over HTTP against a running app, the way a parent and the game would,
+// Demo rehearsal: walks the showcase flow over HTTP against a running app, the way a parent and the game would,
 // and prints one line per step. Use it before every demo, on localhost and on the production URL.
 //
 //   node scripts/demo-rehearsal.mts --base https://<app url>
