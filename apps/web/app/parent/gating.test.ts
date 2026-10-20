@@ -76,3 +76,15 @@ describe("the report offer and the paid state (D-05b)", () => {
     expect(reportView(purchase, returning, "no_flag")).toBe(view);
   });
 });
+
+// R6-9: a link from the report email opened while logged in as another parent finds no such child (RLS). The
+// page says so and points to the log out action instead of a generic error.
+describe("child page of another account (R6-9)", () => {
+  it("has its own message, which is not the generic error and passes the wording gate", () => {
+    expect(S.child.notFound).toBeTruthy();
+    expect(S.child.notFound).not.toBe(S.error);
+    expect(S.child.notFound).toContain(S.nav.logout);
+    expect(findBannedWording([S.child.notFound])).toEqual([]);
+    expect(findUnnegated([S.child.notFound])).toEqual([]);
+  });
+});

@@ -369,6 +369,7 @@ export class LanternWatchRunner {
   }
 
   private complete(ts: number) {
+    this.lastClosed = null; // the records are handed over below; nothing may rewrite them afterwards
     this.setState("done", ts);
     this.hooks.onComplete?.({
       trials: this.records,

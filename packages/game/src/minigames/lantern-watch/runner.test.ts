@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { SessionMetricsSchema } from "@adhdcheck/contracts";
-import { DEFAULT_TASK, type TaskConfig } from "./logic";
+import { SessionMetricsSchema, type Trial } from "@adhdcheck/contracts";
+import { buildSchedule, DEFAULT_TASK, type TaskConfig } from "./logic";
 import { RESPONSE_WINDOW_MS } from "../wake-fireflies/logic";
-import { BREAK_MIN_MS, LanternWatchRunner, type ActiveTrial, type RunData, type RunState } from "./runner";
+import { BREAK_MIN_MS, LATE_TAP_GRACE_MS, LanternWatchRunner, type ActiveTrial, type RunData, type RunState } from "./runner";
 import { buildSessionMetrics } from "./session";
 
 const FRAME = 1000 / 60;
@@ -13,15 +13,16 @@ type Tap = { t: number; lantern: number | null; x?: number; y?: number; deliver?
 type Child = (trial: ActiveTrial, onset: number) => Tap[];
 
 /** Drives the runner like the scene does: pending pointer events are dispatched before each frame callback. */
-function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; anticipationMs?: number | null } = {}) {
+function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; anticipationMs?: number | null; seed?: number } = {}) {
   const shown: { trial: ActiveTrial; onset: number }[] = [];
   const hidden: { trial: ActiveTrial; at: number }[] = [];
   const states: { s: RunState; ts: number }[] = [];
   let pending: Tap[] = [];
   let data: RunData | null = null;
+  let atComplete: Trial[] | null = null; // a copy of the records at the moment onComplete fires
   const child: Child = opts.child ?? ((tr, onset) => (tr.type === "nogo" ? [] : [{ t: onset + 400, lantern: tr.lantern }]));
   const r = new LanternWatchRunner(
-    { task: opts.task ?? DEFAULT_TASK, seed: 42, anticipationMs: opts.anticipationMs ?? null },
+    { task: opts.task ?? DEFAULT_TASK, seed: opts.seed ?? 42, anticipationMs: opts.anticipationMs ?? null },
     {
       onState: (s, ts) => {
         states.push({ s, ts });
@@ -34,6 +35,7 @@ function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; a
       onHide: (ts, trial) => hidden.push({ trial, at: ts }),
       onComplete: (d) => {
         data = d;
+        atComplete = structuredClone(d.trials);
       },
     },
   );
@@ -49,7 +51,7 @@ function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; a
     r.frame(ts);
   }
   if (!data) throw new Error(`run never finished, state ${r.state}`);
-  return { data: data as RunData, shown, hidden, states, runner: r, addTap: (t: Tap) => (pending = [...pending, t]) };
+  return { data: data as RunData, atComplete: atComplete as unknown as Trial[], shown, hidden, states, runner: r, addTap: (t: Tap) => (pending = [...pending, t]) };
 }
 
 describe("LanternWatchRunner, a child who taps every firefly and no moth", () => {
@@ -253,11 +255,13 @@ describe("LanternWatchRunner, errors and off-target taps", () => {
 describe("LanternWatchRunner, a tap delivered after the frame that closed its trial (R3-L3)", () => {
   // The third go trial of the task: the tap is stamped inside its response window, delivered two frames late.
   let seen = 0;
+  let lateWindow = 0;
   const lateGo: Child = (tr, onset) => {
     if (tr.type === "nogo") return [];
     if (tr.phase !== "task") return [{ t: onset + 400, lantern: tr.lantern }];
     seen += 1;
     const window = DEFAULT_TASK.stimulusMs + tr.isiMs;
+    if (seen === 3) lateWindow = window;
     return seen === 3
       ? [{ t: onset + window - 5, lantern: tr.lantern, deliver: onset + window + FRAME * 1.5 }]
       : [{ t: onset + 400, lantern: tr.lantern }];
@@ -269,6 +273,8 @@ describe("LanternWatchRunner, a tap delivered after the frame that closed its tr
     const late = task.filter((t) => t.responded && (t.rt_ms as number) > 900);
     expect(late).toHaveLength(1);
     expect(late[0]?.outcome).toBe("hit");
+    // R6-5: the response time is the timestamp of the tap minus the onset, not the time the event was delivered.
+    expect(late[0]?.rt_ms).toBeCloseTo(lateWindow - 5, 6);
     expect(task.filter((t) => t.type === "go" && !t.responded)).toHaveLength(0);
   });
 
@@ -351,6 +357,18 @@ describe("LanternWatchRunner, every tap stamped inside its window and delivered 
   };
   const { data } = sim({ child: everyLate });
 
+  it("R6-5 gives each late tap the response time of its own timestamp, tap minus onset", () => {
+    for (const t of data.trials.filter((x) => x.type === "calibration")) expect(t.rt_ms).toBeCloseTo(RESPONSE_WINDOW_MS - 5, 6);
+    // Task fireflies: rt = stimulus + ISI - 5, so rt + 5 - stimulus is the ISI, inside the configured range.
+    const task = data.trials.filter((x) => x.type === "go");
+    expect(task.length).toBeGreaterThan(0);
+    for (const t of task) {
+      const isi = (t.rt_ms as number) + 5 - DEFAULT_TASK.stimulusMs;
+      expect(isi).toBeGreaterThanOrEqual(DEFAULT_TASK.isiMsMin - 1e-6);
+      expect(isi).toBeLessThanOrEqual(DEFAULT_TASK.isiMsMax + 1e-6);
+    }
+  });
+
   it("loses no trial: every firefly trial of the calibration and the task has its response", () => {
     expect(data.trials).toHaveLength(154);
     const lost = data.trials.filter((t) => t.type !== "nogo" && !t.responded);
@@ -375,5 +393,98 @@ describe("LanternWatchRunner, every tap stamped inside its window and delivered 
     const cal = r.data.trials.filter((t) => t.type === "calibration");
     expect(cal).toHaveLength(10);
     expect(cal[9]?.outcome).toBe("hit");
+  });
+});
+
+// R6-2, R6-3, R6-4
+function lastTaskTrialIsGo(seed: number) {
+  return buildSchedule(DEFAULT_TASK, seed).at(-1)?.type === "go";
+}
+// A seed whose last task trial is a firefly (seed 42 ends on a moth, so it never exercises the wait at the task end).
+const GO_SEED = Array.from({ length: 500 }, (_, k) => k + 1).find(lastTaskTrialIsGo) as number;
+const LAST_INDEX = DEFAULT_TASK.blocks * DEFAULT_TASK.trialsPerBlock - 1;
+
+describe("LanternWatchRunner, the task-end wait for a late tap (R6-2, R6-3)", () => {
+  // The last task trial is a firefly; its tap is stamped 5 ms before the window closes and delivered 1.5 frames late.
+  const lateLast: Child = (tr, onset) => {
+    if (tr.type === "nogo") return [];
+    if (tr.phase === "task" && tr.taskIndex === LAST_INDEX) {
+      const window = DEFAULT_TASK.stimulusMs + tr.isiMs;
+      return [{ t: onset + window - 5, lantern: tr.lantern, deliver: onset + window + FRAME * 1.5 }];
+    }
+    return [{ t: onset + 400, lantern: tr.lantern }];
+  };
+
+  it("uses a seed whose last task trial is a firefly, unlike seed 42", () => {
+    expect(GO_SEED).toBeGreaterThan(0);
+    expect(lastTaskTrialIsGo(42)).toBe(false);
+  });
+
+  it("R6-2 has the response of the last trial in the records at the moment onComplete fires", () => {
+    const r = sim({ seed: GO_SEED, child: lateLast });
+    const last = r.atComplete.at(-1) as Trial;
+    expect(last.type).toBe("go");
+    expect(last.responded).toBe(true);
+    expect(last.outcome).toBe("hit");
+    expect(r.atComplete.filter((t) => t.type !== "nogo" && !t.responded)).toEqual([]);
+  });
+
+  it("R6-3 a tap stamped inside the last window but delivered after completion does not rewrite the records", () => {
+    const quiet: Child = (tr, onset) => (tr.type === "nogo" || (tr.phase === "task" && tr.taskIndex === LAST_INDEX) ? [] : [{ t: onset + 400, lantern: tr.lantern }]);
+    const r = sim({ seed: GO_SEED, child: quiet });
+    const lastShown = r.shown.at(-1) as { trial: ActiveTrial; onset: number };
+    const before = JSON.stringify(r.data.trials);
+    expect(r.data.trials.at(-1)?.responded).toBe(false);
+    const kind = r.runner.pointerDown(lastShown.onset + 300, 100, 200, lastShown.trial.lantern);
+    expect(kind).not.toBe("response");
+    expect(JSON.stringify(r.data.trials)).toBe(before);
+  });
+});
+
+describe("LanternWatchRunner, guards on a late tap (R4-1, R6-4)", () => {
+  const cal = (trials: Trial[]) => trials.filter((t) => t.type === "calibration");
+
+  it("a tap delivered after the grace that followed a discarded calibration round writes nothing", () => {
+    let n = 0;
+    const child: Child = (tr, onset) => {
+      if (tr.phase === "calibration") {
+        n += 1;
+        if (n < 10) return [];
+        if (n === 10) return [{ t: onset + RESPONSE_WINDOW_MS - 5, lantern: tr.lantern, deliver: onset + RESPONSE_WINDOW_MS + LATE_TAP_GRACE_MS + 200 }];
+        return [{ t: onset + 300, lantern: tr.lantern }]; // round 2
+      }
+      return tr.type === "nogo" ? [] : [{ t: onset + 400, lantern: tr.lantern }];
+    };
+    const r = sim({ child });
+    expect(r.states.filter((s) => s.s === "calib")).toHaveLength(2); // round 1 was discarded
+    const round = cal(r.data.trials);
+    expect(round).toHaveLength(10);
+    expect(round.every((t) => t.outcome === "hit")).toBe(true);
+    const onsets = round.map((t) => t.stimulus_onset_ms);
+    expect([...onsets].sort((a, b) => a - b)).toEqual(onsets); // no slot was rewritten with an old onset
+    expect(round.map((t) => t.rt_ms)).toEqual(round.map(() => 300));
+  });
+
+  it("a second tap in the same window does not write twice", () => {
+    let n = 0;
+    let firstTap = 0;
+    const child: Child = (tr, onset) => {
+      if (tr.phase === "task" && tr.type === "go") {
+        n += 1;
+        if (n === 2) {
+          const window = DEFAULT_TASK.stimulusMs + tr.isiMs;
+          firstTap = window - 20;
+          return [
+            { t: onset + window - 20, lantern: tr.lantern, deliver: onset + window + FRAME * 1.5 },
+            { t: onset + window - 4, lantern: tr.lantern, deliver: onset + window + FRAME * 1.6 },
+          ];
+        }
+      }
+      return tr.type === "nogo" ? [] : [{ t: onset + 400, lantern: tr.lantern }];
+    };
+    const r = sim({ child });
+    const written = r.data.trials.filter((t) => t.type === "go" && t.responded && (t.rt_ms as number) > 900);
+    expect(written).toHaveLength(1);
+    expect(written[0]?.rt_ms).toBeCloseTo(firstTap, 6);
   });
 });

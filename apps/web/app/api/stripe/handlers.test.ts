@@ -395,12 +395,11 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("R5-4 does not record a pending purchase for bad metadata, a paid checkout or another event", async () => {
+  it("R5-4 does not record a pending purchase for bad metadata or a paid checkout, nor for a checkout that is not a payment", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const { d, startPurchase } = deps();
     await handleWebhook(signed(event({ payment_status: "unpaid", metadata: { parent_id: "x", session_id: SESSION } })), d);
     await handleWebhook(signed(event({ payment_status: "paid" })), d);
-    await handleWebhook(signed(event({ type: "checkout.session.async_payment_failed", payment_status: "unpaid" })), d);
     await handleWebhook(signed(event({ mode: "subscription", payment_status: "unpaid" })), d);
     expect(startPurchase).not.toHaveBeenCalled();
   });
@@ -565,6 +564,49 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
     expect(markNotPaid).toHaveBeenCalledWith(CHECKOUT, status);
     expect(markPaid).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  // R6-6: the row written at checkout start can be missing (that insert is only logged when it fails). A
+  // failed or expired event must still leave a closed row, or a later completed event would create a pending
+  // one that blocks every new checkout with 409.
+  it.each([
+    ["checkout.session.async_payment_failed", "failed"],
+    ["checkout.session.expired", "expired"],
+  ])("R6-6 on %s records the purchase from the metadata first, then marks it %s", async (type, status) => {
+    const { d, startPurchase, markNotPaid } = deps();
+    expect((await handleWebhook(signed(event({ type, payment_status: "unpaid", metadata: { parent_id: PARENT, session_id: SESSION, lang: "ro" } })), d)).status).toBe(200);
+    expect(startPurchase).toHaveBeenCalledWith({ parentId: PARENT, sessionId: SESSION, checkoutId: CHECKOUT, lang: "ro" });
+    expect(markNotPaid).toHaveBeenCalledWith(CHECKOUT, status);
+    expect(startPurchase.mock.invocationCallOrder[0]!).toBeLessThan(markNotPaid.mock.invocationCallOrder[0]!);
+  });
+
+  it("R6-6 event order: failed first with no row, then completed unpaid, leaves no pending row", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const rows = new Map<string, string>(); // checkout id -> status; start_report_purchase keeps an existing row
+    const { d, startPurchase, markNotPaid } = deps();
+    startPurchase.mockImplementation(async ({ checkoutId }) => {
+      if (!rows.has(checkoutId)) rows.set(checkoutId, "pending");
+      return "started";
+    });
+    markNotPaid.mockImplementation(async (id, status) => {
+      if (rows.get(id) === "pending") rows.set(id, status);
+    });
+    await handleWebhook(signed(event({ type: "checkout.session.async_payment_failed", payment_status: "unpaid" })), d);
+    await handleWebhook(signed(event({ type: "checkout.session.completed", payment_status: "unpaid" })), d);
+    expect(rows.get(CHECKOUT)).toBe("failed");
+    expect([...rows.values()]).not.toContain("pending");
+  });
+
+  it("R6-6 still marks the purchase when the metadata is unusable, and answers 500 when the row cannot be recorded", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const a = deps();
+    await handleWebhook(signed(event({ type: "checkout.session.expired", payment_status: "unpaid", metadata: { parent_id: "x" } })), a.d);
+    expect(a.startPurchase).not.toHaveBeenCalled();
+    expect(a.markNotPaid).toHaveBeenCalledWith(CHECKOUT, "expired");
+    const b = deps();
+    b.startPurchase.mockRejectedValue(new Error("db down"));
+    expect((await handleWebhook(signed(event({ type: "checkout.session.expired", payment_status: "unpaid" })), b.d)).status).toBe(500);
+    expect(b.markNotPaid).not.toHaveBeenCalled();
   });
 
   it("R4-2 ignores a failed or expired event of a checkout that is not a one-off payment", async () => {

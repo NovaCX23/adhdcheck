@@ -57,7 +57,14 @@ export function ChildView({ childId }: { childId: string }) {
     return (
       <Shell>
         <BackLink />
-        <ErrorNote />
+        {state === "missing" ? (
+          // The header of the Shell carries the Log out action.
+          <p role="alert" className="rounded-xl bg-berry-soft px-4 py-3 text-ink">
+            {S.child.notFound}
+          </p>
+        ) : (
+          <ErrorNote />
+        )}
       </Shell>
     );
 

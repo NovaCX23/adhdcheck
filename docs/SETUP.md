@@ -61,7 +61,7 @@ Copy `.env.example` to `apps/web/.env.local` (gitignored) and fill the values th
 | `STRIPE_SECRET_KEY` | server only, Stripe test mode |
 | `STRIPE_WEBHOOK_SECRET` | server only |
 | `STRIPE_PRICE_ID` | server only: the test-mode **one-time** price of the detailed report, 9.99 EUR (D-05b), used by `POST /api/stripe/checkout` in `mode: "payment"`. A recurring price is refused by Stripe in that mode |
-| `RESEND_API_KEY` | server only: sends the paid report by email (FR-51). Optional: without it the purchase is still recorded and the parent downloads the report |
+| `RESEND_API_KEY` | server only: sends the email with the link to the paid report (FR-51; the report itself is not attached). Optional: without it the purchase is still recorded and the parent downloads the report |
 | `SITE_URL` | server only: the public address of the site without a trailing slash, for example `https://your-production-domain`. It is the only source of the Stripe success and cancel URLs and of the dashboard link in emails; the request origin is never used. Without it checkout answers 503 and parent emails with a link are skipped |
 | `EMAIL_FROM` | server only: the sender of every email (FR-50 messages and the paid report), for example `ADHDCheck <reports@your-verified-domain>`. It must be on a domain verified in Resend: `onboarding@resend.dev` only delivers to the Resend account owner's own address (https://resend.com/docs/knowledge-base/403-error-resend-dev-domain). Optional: unset outside production the Resend test sender is used; unset in production no email is sent (this variable was called `REPORT_FROM_EMAIL`) |
 | `DEMO_PARENT_EMAIL` | server only: the account that may use Reset demo (`POST /api/demo/reset`) |

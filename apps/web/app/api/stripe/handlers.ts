@@ -217,6 +217,12 @@ export async function handleWebhook(request: Request, deps: WebhookDeps): Promis
     const closed = event.data.object as Stripe.Checkout.Session;
     if (closed.mode !== "payment") return Response.json({ received: true });
     try {
+      // R6-6: the row written at checkout start can be missing. Record it from the metadata first (an existing
+      // row is kept), so this event closes it and a later "completed, unpaid" event cannot open a pending one.
+      const known = Metadata.safeParse(closed.metadata ?? {});
+      if (known.success) {
+        await deps.startPurchase({ parentId: known.data.parent_id, sessionId: known.data.session_id, checkoutId: closed.id, lang: known.data.lang });
+      }
       await deps.markNotPaid(closed.id, notPaid);
     } catch {
       console.error("[stripe] webhook failed", { error: "storage_unavailable" });

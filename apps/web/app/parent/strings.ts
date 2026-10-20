@@ -141,6 +141,8 @@ export const S = {
   },
   child: {
     back: "All children",
+    // R6-9: a link from the report email opened while logged in as another parent. TODO (texts owner): approve.
+    notFound: "This page is not available for the account you are logged in with. Use Log out, then log in with the account that bought the report.",
     history: "Earlier games",
     delete: "Delete child and all data",
     confirmDelete: "Delete this child and every game and mission? This cannot be undone.",
