@@ -1,20 +1,49 @@
 import { ScoreResultSchema, SessionMetricsSchema } from "@adhdcheck/contracts";
 import { scoreSession } from "@adhdcheck/scoring";
-import type { SessionStore } from "./store";
+import { hashPlayCode, readBearerCode } from "../../../lib/play-link";
+import { clientKey, type RateLimiter } from "../../../lib/rate-limit";
+import { InvalidPlayLinkError, type SessionStore } from "./store";
 
 // POST /api/sessions (FR-11): validate SessionMetrics v1, score it, save session, trials and score,
 // return the ScoreResult. A short session is saved and scored like any other; the scorer gives it
 // band insufficient_data (FR-20, decided: no 4xx). Scoring is deterministic, so a repeated
 // session_id is stored once and answered with the same result (FR-12).
-// Errors are logged by code only: no session content, no ids (NFR-02).
+// The child's device proves it was sent by a parent with the play link code (FR-01), and posts
+// are rate limited per client address (NFR-13), checked first so a burst costs no parsing.
+// Errors are logged by code only: no session content, no ids, no code (NFR-02).
 
-type ErrorCode = "invalid_json" | "invalid_session" | "scoring_failed" | "storage_unavailable";
+type ErrorCode =
+  | "too_many_requests"
+  | "invalid_play_link"
+  | "invalid_json"
+  | "invalid_session"
+  | "scoring_failed"
+  | "storage_unavailable";
 
 function fail(status: number, error: ErrorCode, extra?: object) {
   return Response.json({ error, ...extra }, { status });
 }
 
-export async function handleSessionPost(request: Request, deps: { store: SessionStore }): Promise<Response> {
+export async function handleSessionPost(
+  request: Request,
+  deps: { store: SessionStore; rateLimiter: RateLimiter },
+): Promise<Response> {
+  try {
+    if (!(await deps.rateLimiter.take(clientKey(request, "sessions")))) {
+      console.warn("[sessions] rejected", { error: "too_many_requests" });
+      return fail(429, "too_many_requests");
+    }
+  } catch {
+    console.error("[sessions] failed", { error: "storage_unavailable" });
+    return fail(503, "storage_unavailable");
+  }
+
+  const code = readBearerCode(request);
+  if (!code) {
+    console.warn("[sessions] rejected", { error: "invalid_play_link" });
+    return fail(401, "invalid_play_link");
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -42,9 +71,13 @@ export async function handleSessionPost(request: Request, deps: { store: Session
   }
 
   try {
-    const { created } = await deps.store.save(session, score);
+    const { created } = await deps.store.save(hashPlayCode(code), session, score);
     return Response.json(score, { status: created ? 201 : 200 });
-  } catch {
+  } catch (err) {
+    if (err instanceof InvalidPlayLinkError) {
+      console.warn("[sessions] rejected", { error: "invalid_play_link" });
+      return fail(401, "invalid_play_link");
+    }
     console.error("[sessions] failed", { error: "storage_unavailable" });
     return fail(503, "storage_unavailable");
   }
