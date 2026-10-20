@@ -126,7 +126,9 @@ describe("RoutePlannerRunner", () => {
     const [p0] = s.result()!.puzzles;
     expect(p0!.solved).toBe(false);
     expect(p0!.planningMs).toBeNull();
-    expect(p0!.extraMoves).toBe(0);
+    expect(p0!.extraMoves).toBeNull();
+    expect(s.result()!.summary.nUnsolved).toBe(1);
+    expect(s.result()!.summary.totalExtraMoves).toBe(0);
   });
 
   it("ignores taps before the board is drawn and between puzzles", () => {
@@ -139,5 +141,44 @@ describe("RoutePlannerRunner", () => {
     s.tick(FRAME);
     expect(s.r.state).toBe("between");
     expect(s.r.pointerDown(s.now(), { c: 2, r: 3 })).toBe("ignored");
+  });
+
+  it("does not let an unsolved board lower the total extra moves", () => {
+    const s = setup();
+    s.tap(null);
+    s.tick(PRACTICE_INTRO_MS + 2 * FRAME);
+    s.solve();
+    s.toNextBoard();
+    s.solve(true); // puzzle 0: a detour of 2 extra moves
+    s.toNextBoard();
+    s.tick(IDLE_TIMEOUT_MS + 2 * FRAME); // puzzle 1: unsolved
+    for (let k = 2; k < 4; k++) {
+      s.toNextBoard();
+      s.solve();
+    }
+    s.toNextBoard();
+    const res = s.result()!;
+    expect(res.puzzles.map((p) => p.extraMoves)).toEqual([2, null, 0, 0]);
+    expect(res.summary.totalExtraMoves).toBe(2);
+    expect(res.summary.nUnsolved).toBe(1);
+  });
+
+  it("ignores a tap stamped before the onset frame, so planningMs is never negative", () => {
+    const s = setup();
+    s.tap(null);
+    s.tick(PRACTICE_INTRO_MS + 2 * FRAME);
+    s.solve();
+    s.toNextBoard();
+    const b = s.r.board!;
+    const step = hintStep(b.puzzle, b.at, b.taken)!;
+    expect(s.r.pointerDown(s.now() - 50, step)).toBe("ignored");
+    expect(s.r.pointerDown(s.now() - 50, step)).toBe("ignored");
+    s.solve();
+    for (let k = 1; k < 4; k++) {
+      s.toNextBoard();
+      s.solve();
+    }
+    s.toNextBoard();
+    for (const p of s.result()!.puzzles) expect(p.planningMs!).toBeGreaterThanOrEqual(0);
   });
 });

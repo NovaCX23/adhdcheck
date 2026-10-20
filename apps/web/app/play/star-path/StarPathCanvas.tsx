@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { PLAY_STRINGS } from "../[code]/strings";
+import { mountWithFallback } from "../mountGuard";
 import { mountStarPath, type StarPathHandle, type StarPathResult } from "@adhdcheck/game";
 
 export default function StarPathCanvas({ onComplete }: { onComplete: (r: StarPathResult) => void }) {
@@ -17,18 +19,21 @@ export default function StarPathCanvas({ onComplete }: { onComplete: (r: StarPat
     const q = process.env.NODE_ENV === "development" ? new URLSearchParams(window.location.search) : new URLSearchParams();
     const seed = q.get("seed");
     const max = q.get("max");
-    let cancelled = false;
     let handle: StarPathHandle | undefined;
-    mountStarPath(el, {
+    const cancel = mountWithFallback(
+      el,
+      mountStarPath(el, {
       seed: seed ? Number(seed) : undefined,
       maxLength: max ? Number(max) : undefined,
       onComplete: (r) => cb.current(r),
-    }).then((h) => {
-      if (cancelled) h.destroy();
-      else handle = h;
-    });
+    }),
+      PLAY_STRINGS.unavailable,
+      (h) => {
+        handle = h;
+      },
+    );
     return () => {
-      cancelled = true;
+      cancel();
       handle?.destroy();
     };
   }, []);

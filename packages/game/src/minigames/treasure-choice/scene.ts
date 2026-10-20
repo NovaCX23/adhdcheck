@@ -32,6 +32,7 @@ import { preDelayMs } from "./logic";
 import { Particles } from "./particles";
 import { LANTERN_DARK, LANTERN_FULL, buildBoat, buildChest, buildGem, buildStone, gemColor, type Gem } from "./props";
 import { TreasureChoiceRunner, type QueueItem, type RunState } from "./runner";
+import { isPrimaryPointer } from "../../pointer";
 import { STRINGS } from "./strings";
 import type { Choice, TreasureChoiceResult } from "./types";
 import { buildUi } from "./ui";
@@ -85,7 +86,15 @@ export function createTreasureChoiceScene(parent: HTMLElement, opts: SceneOption
   const audio = new GameAudio(opts.assetBase);
   audio.prefetch();
 
-  const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+  let renderer: WebGLRenderer;
+  try {
+    renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+  } catch (err) {
+    // No WebGL: remove the DOM and audio this function already created, so the caller can show its fallback.
+    audio.close();
+    ui.destroy();
+    throw err;
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x000000, 0);
   ui.root.prepend(renderer.domElement);
@@ -329,6 +338,7 @@ export function createTreasureChoiceScene(parent: HTMLElement, opts: SceneOption
   };
 
   const onDown = (e: PointerEvent) => {
+    if (!isPrimaryPointer(e)) return; // a second finger is not a response
     audio.unlock(); // inside the gesture: required by iOS Safari
     const kind = runner.pointerDown(e.timeStamp, sideAt(e.clientX));
     if (kind === "start") audio.play("start", 0.6);

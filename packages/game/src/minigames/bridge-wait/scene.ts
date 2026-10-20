@@ -29,7 +29,8 @@ import {
 import { GameAudio } from "./audio";
 import { buildCrow, buildLuma, makeOutlineMaterial, type LumaRig } from "./luma";
 import { BridgeWaitRunner, NARRATION_MS, type QueueItem, type RunState } from "./runner";
-import { STRINGS } from "./strings";
+import { isPrimaryPointer } from "../../pointer";
+import { STRINGS, narrationFor } from "./strings";
 import type { BridgeWaitResult } from "./types";
 import { buildUi } from "./ui";
 import { LANTERN_OFF, LANTERN_ON, SIDE_X, buildWorld, deckY, groundY, type World } from "./world";
@@ -169,7 +170,15 @@ export function createBridgeWaitScene(parent: HTMLElement, opts: SceneOptions): 
   const audio = new GameAudio(opts.assetBase);
   audio.prefetch();
 
-  const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+  let renderer: WebGLRenderer;
+  try {
+    renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+  } catch (err) {
+    // No WebGL: remove the DOM and audio this function already created, so the caller can show its fallback.
+    audio.close();
+    ui.destroy();
+    throw err;
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x000000, 0);
   ui.root.prepend(renderer.domElement);
@@ -262,7 +271,7 @@ export function createBridgeWaitScene(parent: HTMLElement, opts: SceneOptions): 
             crow.visible = false;
             crowStart = -1;
             fireflyTarget = 0;
-            ui.say(item?.sched.stopTrial ? `${STRINGS.narration} ${STRINGS.crowHint}` : STRINGS.narration);
+            ui.say(narrationFor(opts.stopSignal));
             if (mode !== "cross") setMode("talk", ts);
             audio.babble(NARRATION_MS);
             break;
@@ -316,6 +325,7 @@ export function createBridgeWaitScene(parent: HTMLElement, opts: SceneOptions): 
   ui.play(true);
 
   const onDown = (e: PointerEvent) => {
+    if (!isPrimaryPointer(e)) return; // a second finger is not a response
     audio.unlock(); // inside the gesture: required by iOS Safari
     const kind = runner.pointerDown(e.timeStamp);
     if (kind === "start") audio.play("start", 0.6);
@@ -440,7 +450,9 @@ export function createBridgeWaitScene(parent: HTMLElement, opts: SceneOptions): 
       const period = mode === "celebrate" ? 720 : 620;
       const p = (t % period) / period;
       const air = p < 0.6 ? p / 0.6 : -1;
-      if (air >= 0) {
+      if (reduced) {
+        // Static pose, no looping jump (prefers-reduced-motion).
+      } else if (air >= 0) {
         lift = (mode === "celebrate" ? 0.55 : 0.3) * 4 * air * (1 - air);
         const s = Math.sin(Math.PI * air);
         sy = 1 + 0.16 * s;
@@ -451,8 +463,8 @@ export function createBridgeWaitScene(parent: HTMLElement, opts: SceneOptions): 
         sy = 1 - sq;
         sx = 1 + sq * 0.7;
       }
-      armL = armR = mode === "celebrate" ? 1.6 + Math.sin(ts * 0.012) * 0.3 : 0.8;
-      flap = Math.sin(ts * 0.05) * 0.5;
+      armL = armR = mode === "celebrate" ? (reduced ? 1.6 : 1.6 + Math.sin(ts * 0.012) * 0.3) : 0.8;
+      flap = reduced ? 0 : Math.sin(ts * 0.05) * 0.5;
       if (mode === "hop" && t > 1250) setMode("idle", ts);
     } else {
       // idle, wave, talk
@@ -609,7 +621,10 @@ export function createBridgeWaitScene(parent: HTMLElement, opts: SceneOptions): 
         if (Array.isArray(mat)) mat.forEach((x) => mats.add(x));
         else if (mat) mats.add(mat);
       });
-      mats.forEach((m) => m.dispose());
+      mats.forEach((m) => {
+        (m as { map?: { dispose(): void } | null }).map?.dispose(); // e.g. the shadow texture
+        m.dispose();
+      });
       grad.dispose();
       world.glow.dispose();
       world.water.dispose();

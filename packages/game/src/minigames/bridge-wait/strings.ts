@@ -9,3 +9,8 @@ export const STRINGS = {
   crossed: "Crossed!",
   done: "All done. Thank you, Luma had fun.",
 } as const;
+
+/** The crow hint is said on every trial when stop trials are enabled, so the text never tells which trial is a stop trial. */
+export function narrationFor(stopSignal: boolean): string {
+  return stopSignal ? `${STRINGS.narration} ${STRINGS.crowHint}` : STRINGS.narration;
+}
