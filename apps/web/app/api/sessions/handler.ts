@@ -47,6 +47,26 @@ type ErrorCode =
   | "scoring_failed"
   | "storage_unavailable";
 
+// Reads the body as UTF-8 text, or returns null as soon as it passes maxBytes (the stream is cancelled).
+export async function readTextWithin(request: Request, maxBytes: number): Promise<string | null> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
 function fail(status: number, error: ErrorCode, extra?: object) {
   return Response.json({ error, ...extra }, { status });
 }
@@ -76,9 +96,23 @@ export async function handleSessionPost(
     return fail(413, "too_large");
   }
 
+  // The header is only a fast path: a streamed (chunked) upload has no content-length, so the body is
+  // also counted while it is read, and reading stops at the limit.
+  let text: string | null;
+  try {
+    text = await readTextWithin(request, MAX_BODY_BYTES);
+  } catch {
+    console.warn("[sessions] rejected", { error: "invalid_json" });
+    return fail(400, "invalid_json");
+  }
+  if (text === null) {
+    console.warn("[sessions] rejected", { error: "too_large" });
+    return fail(413, "too_large");
+  }
+
   let body: unknown;
   try {
-    body = await request.json();
+    body = JSON.parse(text);
   } catch {
     console.warn("[sessions] rejected", { error: "invalid_json" });
     return fail(400, "invalid_json");

@@ -72,7 +72,7 @@ export const S = {
   processing: {
     title: "Before the first game",
     explain:
-      "To show you a result, we keep what the game records while your child plays: taps and their timing, linked to the nickname and birth year you entered. Only you can see it, and deleting the child deletes all of it.",
+      "To show you a result, we keep what the game records while your child plays: taps and their timing, linked to the nickname and birth year you entered. Deleting the child deletes all of it.",
     agree: "I am this child's parent or legal guardian, and I agree to this.",
     button: "Continue",
   },

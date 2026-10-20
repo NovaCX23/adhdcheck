@@ -110,6 +110,7 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
   const raws: RawTrial[] = [];
   const woken: Woken[] = [];
   let completed = false;
+  let endHold: number | undefined;
   let frame = 0;
   let lastNow = 0;
 
@@ -168,7 +169,7 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
       trials,
       calibration: summarise(trials),
     };
-    window.setTimeout(() => {
+    endHold = window.setTimeout(() => {
       if (!completed) {
         completed = true;
         opts.onComplete?.(result);
@@ -291,6 +292,9 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
 
   return {
     destroy() {
+      // A game closed during the end hold never reports a result.
+      completed = true;
+      window.clearTimeout(endHold);
       cancelAnimationFrame(frame);
       canvas.removeEventListener("pointerdown", onPointerDown);
       ro.disconnect();

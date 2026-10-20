@@ -67,7 +67,7 @@ export function toSessionResult(row: SessionRow): SessionResult {
 export const MIN_AGE = 6;
 export const MAX_AGE = 12;
 
-// The longest nickname; the database check (migration 20261021100000_child_bounds) uses the same number.
+// The longest nickname; the database check (migration 20261021120000_child_bounds) uses the same number.
 // Placeholder: TODO texts owner confirms (docs/02 FR-31).
 export const MAX_NICKNAME_LENGTH = 40;
 

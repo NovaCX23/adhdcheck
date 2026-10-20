@@ -153,7 +153,11 @@ describe("GET /api/play-links/[code] (FR-01)", () => {
 
   it("answers 500, not a storage error, when the stored link breaks the contract", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const store: PlayLinkStore = { issue: vi.fn(), resolve: vi.fn().mockResolvedValue({ childId: "", consent: OFF }) };
+    const store: PlayLinkStore = {
+      issue: vi.fn(),
+      resolve: vi.fn().mockResolvedValue({ childId: "", consent: OFF }),
+      hasProcessingConsent: vi.fn(),
+    };
     const res = await handleResolvePlayLink(newPlayCode().code, { store });
 
     expect(res.status).toBe(500);

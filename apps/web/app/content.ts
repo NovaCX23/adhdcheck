@@ -3,7 +3,8 @@
 // no likelihood, severity, accuracy, treatment or validation claim; nothing says the reader's child has a
 // condition. landing-copy.test.ts enforces this on every string below and on the rendered page.
 // Product facts used here, decided by the owner (2026-10-20): 10–\u206015 minute 3D game with Luma, the headline
-// and next step always free (decision A), detailed PDF report 9.99 EUR one-off. Pilot, not CE marked.
+// and next step always free (decision A), only the PDF report is paid (D-05); price and product: TODO
+// (docs/02 D-05b), so the page states no price figure and no billing model. Pilot, not CE marked.
 // "10–\u206015": a word joiner keeps the range on one line.
 // Retention period is still open (docs/02 D-09), so the FAQ says so instead of giving a number.
 
@@ -94,7 +95,7 @@ const ro = {
   result: {
     kicker: "Ce vezi tu la final",
     title: "Una din două propoziții simple. Apoi pasul următor.",
-    sub: "Nu procente, nu etichete. Ambele variante arată la fel, fără alarme roșii.",
+    sub: "Propoziții simple, fără etichete. Ambele variante arată la fel, fără alarme roșii.",
     a: "Se recomandă o evaluare de specialitate.",
     b: "Activitatea nu indică o urmărire specifică.",
     next: "Pasul următor: cu cine să vorbești (medicul de familie, pediatrul sau medicul psihiatru pentru copii) și ce să duci.",
@@ -114,13 +115,13 @@ const ro = {
     },
     paid: {
       label: "Raportul detaliat",
-      price: "9,99 EUR",
-      priceNote: "plătești o singură dată, fără abonament",
+      price: "În curând",
+      priceNote: "prețul se stabilește în pilot",
       items: [
         "Un PDF pe care îl duci la programare",
-        "Pe scurt, cum a mers fiecare mini-joc",
-        "Data, dispozitivul și calitatea datelor din sesiune",
-        "Ce poate și ce nu poate spune metoda, pe înțeles",
+        "Data sesiunii, rezultatul și explicația lui",
+        "Măsurătorile din joc",
+        "Pasul următor și mențiunea că nu este un diagnostic",
       ],
     },
     note: "Decizi după ce vezi rezultatul gratuit. Nu îți cerem cardul ca să joci.",
@@ -166,8 +167,8 @@ const ro = {
         a: "Durata exactă de păstrare se stabilește în timpul pilotului și va fi scrisă în nota de confidențialitate înainte de lansare. Până atunci, poți șterge oricând profilul și toate sesiunile lui.",
       },
       {
-        q: "Ce primesc pentru 9,99 EUR?",
-        a: "Un raport PDF detaliat pentru acea sesiune, plătit o singură dată. Fără abonament, nimic nu se reînnoiește. Rezultatul și pasul următor rămân gratuite, fie că îl cumperi, fie că nu.",
+        q: "Ce primesc dacă plătesc raportul?",
+        a: "Un raport PDF pentru acea sesiune. Rezultatul și pasul următor rămân gratuite, fie că îl cumperi, fie că nu.",
       },
       {
         q: "Copilul ia deja medicamente. Mai are sens?",
@@ -283,7 +284,7 @@ const en: Dict = {
   result: {
     kicker: "What you see at the end",
     title: "One of two plain sentences. Then the next step.",
-    sub: "No percentages, no labels. Both look the same, with no red alarm for either.",
+    sub: "Plain sentences, no labels. Both look the same, with no red alarm for either.",
     a: "A professional assessment is recommended.",
     b: "No specific follow-up indicated by this activity.",
     next: "Next step: who to talk to (your GP, a paediatrician or a child psychiatrist) and what to bring.",
@@ -303,13 +304,13 @@ const en: Dict = {
     },
     paid: {
       label: "Detailed report",
-      price: "9.99 EUR",
-      priceNote: "one-off, no subscription",
+      price: "Coming soon",
+      priceNote: "the price is set during the pilot",
       items: [
         "A PDF to bring to the appointment",
-        "A short summary of how each mini-game went",
-        "Date, device and data quality of the session",
-        "What the method can and cannot tell, in plain words",
+        "The session date, the result and its supporting line",
+        "The game measures",
+        "The next step, with the note that this is not a diagnosis",
       ],
     },
     note: "You decide after you see the free result. No card needed to play.",
@@ -355,8 +356,8 @@ const en: Dict = {
         a: "The exact retention period is being set during the pilot and will be written in the privacy notice before launch. Until then, you can delete the profile and all its sessions at any time.",
       },
       {
-        q: "What do I get for 9.99 EUR?",
-        a: "One detailed PDF report for that session, paid once. No subscription, nothing renews. The result and the next step stay free whether you buy it or not.",
+        q: "What do I get if I pay for the report?",
+        a: "One PDF report for that session. The result and the next step stay free whether you buy it or not.",
       },
       {
         q: "My child already takes medication. Does it still make sense?",

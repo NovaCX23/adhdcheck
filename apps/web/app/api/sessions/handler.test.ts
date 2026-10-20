@@ -214,6 +214,51 @@ describe("POST /api/sessions", () => {
     expect(saved.size).toBe(0);
   });
 
+  // A streamed (chunked) upload carries no content-length, so the header check alone cannot bound it.
+  function streamed(chunks: string[]) {
+    const bytes = new TextEncoder();
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const next = chunks[pulled++];
+        if (next === undefined) controller.close();
+        else controller.enqueue(bytes.encode(next));
+      },
+    });
+    const request = new Request("http://localhost/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${link.code}` },
+      body,
+      duplex: "half",
+    } as RequestInit);
+    return { request, pulledChunks: () => pulled };
+  }
+
+  it("NFR-13: answers 413 to a streamed body above the size limit with no content-length, and stops reading", async () => {
+    const { store, saved } = memoryStore();
+    const chunk = " ".repeat(100_000);
+    const { request, pulledChunks } = streamed(Array.from({ length: 50 }, () => chunk));
+    expect(request.headers.get("content-length")).toBeNull();
+
+    const res = await handleSessionPost(request, { store, rateLimiter: allowAll });
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "too_large" });
+    expect(saved.size).toBe(0);
+    expect(pulledChunks()).toBeLessThan(50);
+  });
+
+  it("NFR-13: still accepts a valid streamed body under the limit", async () => {
+    const { store, saved } = memoryStore();
+    const text = JSON.stringify(validSessionMetrics);
+    const { request } = streamed([text.slice(0, 10), text.slice(10)]);
+
+    const res = await handleSessionPost(request, { store, rateLimiter: allowAll });
+
+    expect(res.status).toBe(201);
+    expect(saved.size).toBe(1);
+  });
+
   it("logs the error code but never the session content or ids", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { store } = memoryStore();
