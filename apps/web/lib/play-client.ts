@@ -1,4 +1,11 @@
-import { ScoreResultSchema, type ScoreResult, type SessionMetrics } from "@adhdcheck/contracts";
+import {
+  PlayLinkCreatedSchema,
+  PlayLinkResolvedSchema,
+  ScoreResultSchema,
+  type Consent,
+  type ScoreResult,
+  type SessionMetrics,
+} from "@adhdcheck/contracts";
 
 // Browser helpers around the backend routes, so the play page (Person 1) and the QR page (Person 4)
 // do not hand-write requests. All take an optional fetch for tests.
@@ -26,7 +33,7 @@ async function errorCode(res: Response): Promise<string> {
 }
 
 // FR-70: the parent's camera and microphone choices for this link. Anything but an explicit true is off.
-export type Consent = { camera: boolean; microphone: boolean };
+export type { Consent };
 
 export async function resolvePlayLink(
   code: string,
@@ -34,12 +41,13 @@ export async function resolvePlayLink(
 ): Promise<{ child_id: string; consent: Consent } | null> {
   const res = await fetchImpl(`/api/play-links/${encodeURIComponent(code)}`, { cache: "no-store" });
   if (!res.ok) return null;
-  const body = (await res.json()) as { child_id?: unknown; consent?: { camera?: unknown; microphone?: unknown } | null };
-  if (typeof body.child_id !== "string") return null;
-  return {
-    child_id: body.child_id,
-    consent: { camera: body.consent?.camera === true, microphone: body.consent?.microphone === true },
-  };
+  const raw: unknown = await res.json();
+  const parsed = PlayLinkResolvedSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  // A malformed answer never switches a sensor on: keep the child, read every choice as off.
+  const childId = raw !== null && typeof raw === "object" ? (raw as { child_id?: unknown }).child_id : undefined;
+  if (typeof childId !== "string" || childId === "") return null;
+  return { child_id: childId, consent: { camera: false, microphone: false } };
 }
 
 // FR-12: retries the exact same body after a network error, 429 or 5xx, waiting longer each time.
@@ -86,6 +94,6 @@ export async function createPlayLink(
     body: JSON.stringify({ child_id: childId, camera: consent.camera, microphone: consent.microphone }),
   });
   if (!res.ok) throw new Error(`create play link failed: ${await errorCode(res)}`);
-  const { code, expires_at } = (await res.json()) as { code: string; expires_at: string };
+  const { code, expires_at } = PlayLinkCreatedSchema.parse(await res.json());
   return { code, expires_at, url: `${origin}/play/${code}` };
 }

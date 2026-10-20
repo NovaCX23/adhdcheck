@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { clientKey, type RateLimiter } from "../../../lib/rate-limit";
 
 // POST /api/waitlist: early-access sign-ups from the landing page (FR-42). Stores the address (lower case)
@@ -9,7 +10,7 @@ export interface WaitlistStore {
   add(email: string, lang: "ro" | "en"): Promise<void>;
 }
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const Body = z.strictObject({ email: z.email().max(254), lang: z.enum(["ro", "en"]) });
 
 export async function handleWaitlistPost(
   request: Request,
@@ -34,11 +35,9 @@ export async function handleWaitlistPost(
     return Response.json({ ok: false }, { status: 400 });
   }
 
-  const { email, lang } = (body ?? {}) as { email?: unknown; lang?: unknown };
-  if (typeof email !== "string" || email.length > 254 || !EMAIL.test(email)) {
-    return Response.json({ ok: false }, { status: 400 });
-  }
-  const language = lang === "en" ? "en" : "ro";
+  const parsed = Body.safeParse(body);
+  if (!parsed.success) return Response.json({ ok: false }, { status: 400 });
+  const { email, lang: language } = parsed.data;
 
   try {
     await deps.store.add(email.toLowerCase(), language);

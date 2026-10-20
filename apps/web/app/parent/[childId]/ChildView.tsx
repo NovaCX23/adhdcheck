@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { listChildren, listMissions, listSessionResults, type Child, type MissionRow, type SessionResult } from "@/lib/data/parent";
-import { BAND_TEXT, S } from "../strings";
+import { S } from "../strings";
+import { BandHeadline } from "../_components/BandHeadline";
 import { Missions } from "../_components/Missions";
 import { ProgressChart } from "../_components/ProgressChart";
 import { ResultCard, formatDate } from "../_components/ResultCard";
@@ -103,7 +104,7 @@ export function ChildView({ childId }: { childId: string }) {
                       className="flex min-h-11 w-full flex-col items-start rounded-lg px-2 py-2 text-left hover:bg-cream-2 focus-visible:outline-2 focus-visible:outline-ink aria-[current=true]:bg-cream-2"
                     >
                       <span className="text-sm text-ink-muted">{formatDate(r.started_at)}</span>
-                      <span className="text-sm font-semibold">{r.score ? BAND_TEXT[r.score.band].headline : ""}</span>
+                      <span className="text-sm">{r.score ? <BandHeadline band={r.score.band} /> : ""}</span>
                     </button>
                   </li>
                 ))}

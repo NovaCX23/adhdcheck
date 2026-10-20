@@ -1,12 +1,13 @@
+import { PlayLinkCreateSchema, PlayLinkCreatedSchema, PlayLinkResolvedSchema, type Consent } from "@adhdcheck/contracts";
 import { hashPlayCode, isPlayCode, newPlayCode, PLAY_LINK_LIFETIME_MS } from "../../../lib/play-link";
-import { isUuid } from "../../../lib/uuid";
 
 // Play links (FR-01, FR-32): the parent creates one for a child, the QR page (Person 4) turns the code
 // into /play/<code>, and the play page (Person 1) looks the code up to get the child_id.
 // Only the code hash reaches the store. Errors are logged by code only: no ids, no code.
 
 // FR-70: the parent's camera and microphone choices, made before play; both off unless switched on.
-export type Consent = { camera: boolean; microphone: boolean };
+// The shape lives in packages/contracts (play-link.ts), shared with the browser helpers.
+export type { Consent };
 
 export interface PlayLinkStore {
   // false when the child is not this parent's (or does not exist).
@@ -14,8 +15,6 @@ export interface PlayLinkStore {
   // The child and the choices of a link that exists, has not expired and has not been used; otherwise null.
   resolve(codeHash: string): Promise<{ childId: string; consent: Consent } | null>;
 }
-
-const BODY_FIELDS = new Set(["child_id", "camera", "microphone"]);
 
 type CreateDeps = { store: PlayLinkStore; getParentId(): Promise<string | null>; now?: () => Date };
 
@@ -39,10 +38,9 @@ export async function handleCreatePlayLink(request: Request, deps: CreateDeps): 
   } catch {
     return fail(400, "invalid_input");
   }
-  const fields = body !== null && typeof body === "object" ? Object.keys(body) : [];
-  const { child_id: childId, camera = false, microphone = false } = (body ?? {}) as Record<string, unknown>;
-  if (fields.some((f) => !BODY_FIELDS.has(f)) || !isUuid(childId)) return fail(400, "invalid_input");
-  if (typeof camera !== "boolean" || typeof microphone !== "boolean") return fail(400, "invalid_input");
+  const parsed = PlayLinkCreateSchema.safeParse(body);
+  if (!parsed.success) return fail(400, "invalid_input");
+  const { child_id: childId, camera, microphone } = parsed.data;
 
   const { code, codeHash } = newPlayCode();
   const expiresAt = new Date((deps.now ?? (() => new Date()))().getTime() + PLAY_LINK_LIFETIME_MS);
@@ -55,7 +53,7 @@ export async function handleCreatePlayLink(request: Request, deps: CreateDeps): 
     return fail(503, "storage_unavailable");
   }
   return Response.json(
-    { code, expires_at: expiresAt.toISOString() },
+    PlayLinkCreatedSchema.parse({ code, expires_at: expiresAt.toISOString() }),
     { status: 201, headers: { "cache-control": "no-store" } },
   );
 }
@@ -67,7 +65,8 @@ export async function handleResolvePlayLink(code: string, deps: { store: PlayLin
   try {
     const link = await deps.store.resolve(hashPlayCode(code));
     if (!link) return fail(404, "invalid_play_link");
-    return Response.json({ child_id: link.childId, consent: link.consent }, { headers: { "cache-control": "no-store" } });
+    const answer = PlayLinkResolvedSchema.parse({ child_id: link.childId, consent: link.consent });
+    return Response.json(answer, { headers: { "cache-control": "no-store" } });
   } catch {
     console.error("[play-links] failed", { error: "storage_unavailable" });
     return fail(503, "storage_unavailable");

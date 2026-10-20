@@ -20,6 +20,12 @@ export async function getOrCreateCustomer(admin: SupabaseClient, stripe: Stripe,
   return data;
 }
 
+export async function getSubscriptionStatus(admin: SupabaseClient, parentId: string): Promise<string | null> {
+  const { data, error } = await admin.from("subscriptions").select("status").eq("parent_id", parentId).maybeSingle();
+  if (error) throw new Error(`read subscription failed: ${error.message}`);
+  return data?.status ?? null;
+}
+
 export async function recordSubscription(
   admin: SupabaseClient,
   update: { customerId: string; subscriptionId: string; status: string; eventCreated: Date },

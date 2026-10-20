@@ -2,7 +2,7 @@
 import { createStripeClient } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { getOrCreateCustomer } from "../billing";
+import { getOrCreateCustomer, getSubscriptionStatus } from "../billing";
 import { handleCheckout } from "../handlers";
 
 export async function POST(request: Request) {
@@ -18,6 +18,7 @@ export async function POST(request: Request) {
   return handleCheckout(request, {
     getParentId: async () => (await supabase.auth.getClaims()).data?.claims.sub ?? null,
     priceId: process.env.STRIPE_PRICE_ID,
+    getSubscriptionStatus: (parentId) => getSubscriptionStatus(admin, parentId),
     getOrCreateCustomer: (parentId) => getOrCreateCustomer(admin, stripe, parentId),
     createCheckoutSession: ({ customer, priceId, parentId, successUrl, cancelUrl }) =>
       stripe.checkout.sessions.create({

@@ -30,8 +30,12 @@ export function envUses(files: { path: string; text: string }[]) {
   );
 }
 
+// NODE_ENV is not a secret: Next.js replaces it with a literal at build time.
+const ALWAYS_ALLOWED = new Set(["NODE_ENV"]);
+
 export function violations(files: { path: string; text: string }[]): string[] {
   return envUses(files).flatMap((use) => {
+    if (ALWAYS_ALLOWED.has(use.name)) return [];
     if (use.name.startsWith("NEXT_PUBLIC_"))
       return PUBLIC_ALLOWED.has(use.name) ? [] : [`${use.path}: ${use.name} would reach the browser`];
     if (use.client || !use.serverOnly) return [`${use.path}: ${use.name} read outside server-only code`];
@@ -66,6 +70,13 @@ describe("environment variables stay on the server (NFR-10, NFR-12)", () => {
       "app/x/Page.tsx: STRIPE_SECRET_KEY read outside server-only code", // check-secrets: allow
       "lib/helper.ts: SUPABASE_SERVICE_ROLE_KEY read outside server-only code", // check-secrets: allow
       "lib/flags.ts: NEXT_PUBLIC_STRIPE_PRICE would reach the browser",
+    ]);
+  });
+
+  it("allows NODE_ENV in a Client Component while a secret in the same file is still flagged", () => {
+    const text = `"use client"; const dev = process.env.NODE_ENV; const k = process.env.STRIPE_SECRET_KEY;`; // check-secrets: allow
+    expect(violations([{ path: "app/play/x/Client.tsx", text }])).toEqual([
+      "app/play/x/Client.tsx: STRIPE_SECRET_KEY read outside server-only code", // check-secrets: allow
     ]);
   });
 });

@@ -16,6 +16,8 @@ function isJson(request: Request) {
 type CheckoutDeps = {
   getParentId(): Promise<string | null>;
   priceId: string | undefined;
+  // Stored subscription status of the parent (subscriptions table), null when there is none.
+  getSubscriptionStatus(parentId: string): Promise<string | null>;
   getOrCreateCustomer(parentId: string): Promise<string>;
   createCheckoutSession(input: {
     customer: string;
@@ -39,6 +41,9 @@ export async function handleCheckout(request: Request, deps: CheckoutDeps): Prom
 
   const origin = new URL(request.url).origin;
   try {
+    // One subscription per parent: an active or trialing one is managed in the portal, never doubled.
+    const stored = await deps.getSubscriptionStatus(parentId);
+    if (stored === "active" || stored === "trialing") return fail(409, "already_subscribed");
     const customer = await deps.getOrCreateCustomer(parentId);
     const session = await deps.createCheckoutSession({
       customer,
@@ -84,6 +89,9 @@ type WebhookDeps = {
   // Stripe signature check (stripe.webhooks.constructEvent with STRIPE_WEBHOOK_SECRET); throws when invalid.
   verify(payload: string, signature: string): Stripe.Event;
   record(update: SubscriptionUpdate): Promise<string>;
+  // stripe.subscriptions.retrieve: Stripe does not guarantee event order and event.created has one-second
+  // resolution, so the status recorded is the one fetched now, not the snapshot inside the event.
+  retrieveSubscription(id: string): Promise<Stripe.Subscription>;
 };
 
 const SUBSCRIPTION_EVENTS = new Set([
@@ -109,13 +117,14 @@ export async function handleWebhook(request: Request, deps: WebhookDeps): Promis
 
   if (!SUBSCRIPTION_EVENTS.has(event.type)) return Response.json({ received: true });
 
-  const subscription = event.data.object as Stripe.Subscription;
-  const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+  const snapshot = event.data.object as Stripe.Subscription;
+  const customerId = typeof snapshot.customer === "string" ? snapshot.customer : snapshot.customer.id;
   try {
+    const current = await deps.retrieveSubscription(snapshot.id);
     const outcome = await deps.record({
       customerId,
-      subscriptionId: subscription.id,
-      status: subscription.status,
+      subscriptionId: snapshot.id,
+      status: current.status,
       eventCreated: new Date(event.created * 1000),
     });
     if (outcome === "unknown_customer") console.warn("[stripe] webhook", { outcome });
