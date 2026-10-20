@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@adhdcheck/contracts": "*",
     "phaser": "^4.2.1",
     "three": "^0.186.1"
   },
