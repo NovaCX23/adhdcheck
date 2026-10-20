@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { attempt } from "@/lib/attempt";
 import { addMission, deleteMission, setMissionDone, type MissionRow } from "@/lib/data/parent";
 import { MISSIONS } from "@/lib/missions";
 import { S } from "../strings";
-import { buttonQuiet, field } from "./shell";
+import { ErrorNote, buttonQuiet, field } from "./shell";
 
 // FR-37: the parent picks missions from the catalogue and ticks them off. Nothing here reads a score
 // (NFR-52): missions are never chosen from a result.
@@ -22,20 +23,22 @@ export function Missions({
 }) {
   const [pick, setPick] = useState(MISSIONS[0]?.key ?? "");
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const title = (key: string) => MISSIONS.find((m) => m.key === key)?.title ?? key;
 
   async function run(action: () => Promise<MissionRow[]>) {
     setBusy(true);
-    try {
-      onChange(await action());
-    } finally {
-      setBusy(false);
-    }
+    setFailed(false);
+    const done = await attempt(action);
+    if (done.ok) onChange(done.value);
+    else setFailed(true);
+    setBusy(false);
   }
 
   return (
     <div className="space-y-4">
       <p className="text-ink-muted">{S.missions.hint}</p>
+      {failed && <ErrorNote />}
       {missions.length === 0 ? (
         <p>{S.missions.empty}</p>
       ) : (

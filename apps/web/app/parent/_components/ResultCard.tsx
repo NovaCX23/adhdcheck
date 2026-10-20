@@ -1,7 +1,8 @@
+import { SCORE_DISCLAIMER } from "@adhdcheck/contracts";
 import type { SessionResult } from "@/lib/data/parent";
 import { BAND_TEXT, S } from "../strings";
 
-// FR-33 result card: band in plain words, indicator bars, reasons, data quality, disclaimer, next step.
+// FR-33 result card: band in plain words, indicator bars, reasons, data quality, disclaimer (fixed text, shown under the headline), next step.
 // Both outcomes get the same colours and weight (adhdcheck-dev skill, section 4): no alarm, no relief.
 // The next step is shown for every band and is never behind the paywall (FR-35, FR-48).
 
@@ -44,6 +45,7 @@ export function ResultCard({ result }: { result: SessionResult }) {
           {S.result.of} {formatDate(result.started_at)}
         </p>
         <h3 className="mt-1 font-display text-2xl leading-tight font-semibold sm:text-3xl">{text.headline}</h3>
+        <p className="mt-2 max-w-prose text-sm text-moon-muted">{SCORE_DISCLAIMER}</p>
         {text.support && <p className="mt-2 max-w-prose text-moon-muted">{text.support}</p>}
       </div>
 
@@ -86,8 +88,6 @@ export function ResultCard({ result }: { result: SessionResult }) {
           <p className="mt-1">{S.result.nextStepText}</p>
         </div>
       </div>
-
-      <p className="border-t border-ink/10 px-5 py-4 text-sm text-ink-muted sm:px-7">{score.disclaimer}</p>
     </article>
   );
 }

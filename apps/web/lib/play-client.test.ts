@@ -119,3 +119,15 @@ describe("createPlayLink (FR-32)", () => {
     await expect(createPlayLink("c1", { fetchImpl, origin: "https://example.test" })).rejects.toThrow("not_logged_in");
   });
 });
+
+describe("play-link contract in the browser helpers", () => {
+  it("throws on a create answer that does not match the contract", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(reply(201, { code: "", expires_at: 5 }));
+    await expect(createPlayLink("c1", { fetchImpl, origin: "https://example.test" })).rejects.toThrow();
+  });
+
+  it("answers null for a resolve answer without a child_id", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(reply(200, { consent: { camera: true, microphone: true } }));
+    expect(await resolvePlayLink(CODE, { fetchImpl })).toBeNull();
+  });
+});

@@ -1,8 +1,7 @@
-import type { ScoreResult, SessionMetrics } from "@adhdcheck/contracts";
+import { SCORE_DISCLAIMER, type ScoreResult, type SessionMetrics } from "@adhdcheck/contracts";
 
 // STUB (Person 2 owns the real rules). It computes nothing yet: no thresholds, no flags,
 // no probability. The disclaimer text is copied from docs/02, section 7.2.
-const DISCLAIMER = "Attention profile from a game. Not a diagnosis. Talk to a healthcare professional.";
 
 export function scoreSession(session: SessionMetrics): ScoreResult {
   return {
@@ -28,6 +27,6 @@ export function scoreSession(session: SessionMetrics): ScoreResult {
     },
     reasons: [],
     recommendations: [],
-    disclaimer: DISCLAIMER,
+    disclaimer: SCORE_DISCLAIMER,
   };
 }

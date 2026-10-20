@@ -60,3 +60,11 @@ describe("ScoreResult v1", () => {
     expect(ScoreResultSchema.safeParse(bad).success).toBe(false);
   });
 });
+
+describe("SCORE_DISCLAIMER", () => {
+  it("is the fixed text of docs/02 section 7.2 and the one the fixture carries", async () => {
+    const { SCORE_DISCLAIMER } = await import("./index");
+    expect(SCORE_DISCLAIMER).toBe("Attention profile from a game. Not a diagnosis. Talk to a healthcare professional.");
+    expect(validScoreResult.disclaimer).toBe(SCORE_DISCLAIMER);
+  });
+});

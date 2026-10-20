@@ -3,9 +3,11 @@
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
+import { attempt } from "@/lib/attempt";
 import { createChild, getSubscriptionStatus, listChildren, listSessionResults, type Child } from "@/lib/data/parent";
 import { BAND_TEXT, S } from "./strings";
 import { ErrorNote, Loading, Panel, Shell, buttonPrimary, buttonQuiet, field, postJson, useParent } from "./_components/shell";
+import { BandHeadline } from "./_components/BandHeadline";
 import { formatDate } from "./_components/ResultCard";
 
 type Row = Child & { last: { band: keyof typeof BAND_TEXT; at: string } | null };
@@ -79,7 +81,7 @@ export function ParentHome() {
                           <span className="text-ink-muted">
                             {S.home.lastResult}, {formatDate(c.last.at)}:
                           </span>{" "}
-                          <span className="font-semibold">{BAND_TEXT[c.last.band].headline}</span>
+                          <BandHeadline band={c.last.band} />
                         </>
                       ) : (
                         <span className="text-ink-muted">{S.home.noResult}</span>
@@ -117,17 +119,19 @@ export function ParentHome() {
 
 function AddChild({ onAdd }: { onAdd: (input: { nickname: string; birth_year: number }) => Promise<void> }) {
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const year = new Date().getFullYear();
   return (
     <form
       className="grid gap-3 sm:grid-cols-[1fr_9rem_auto] sm:items-end"
       action={async (form) => {
         setBusy(true);
-        try {
-          await onAdd({ nickname: String(form.get("nickname") ?? ""), birth_year: Number(form.get("birth_year")) });
-        } finally {
-          setBusy(false);
-        }
+        setFailed(false);
+        const done = await attempt(() =>
+          onAdd({ nickname: String(form.get("nickname") ?? ""), birth_year: Number(form.get("birth_year")) }),
+        );
+        setFailed(!done.ok);
+        setBusy(false);
       }}
     >
       <label className="block">
@@ -141,6 +145,11 @@ function AddChild({ onAdd }: { onAdd: (input: { nickname: string; birth_year: nu
       <button type="submit" disabled={busy} className={buttonPrimary}>
         {S.home.add}
       </button>
+      {failed && (
+        <div className="sm:col-span-3">
+          <ErrorNote />
+        </div>
+      )}
       <p className="text-sm text-ink-muted sm:col-span-3">{S.home.addHint}</p>
     </form>
   );
