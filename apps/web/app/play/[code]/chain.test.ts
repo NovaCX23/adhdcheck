@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScoreResultSchema, SessionMetricsSchema, type SessionMetrics } from "@adhdcheck/contracts";
 import { validScoreResult } from "../../../../../packages/contracts/src/fixtures/score-result.valid";
 import { validSessionMetrics } from "../../../../../packages/contracts/src/fixtures/session-metrics.valid";
 import type { Consent, UploadResult } from "../../../lib/play-client";
 import { runPlayFlow } from "./flow";
-import { DEFAULT_SKIP_HOLD_MS, DEFAULT_TRANSITION_MS, createHoldDetector, createSessionChain, toMiniGameEntry, type ChainDeps, type ChainStep } from "./chain";
+import { DEFAULT_SKIP_HOLD_MS, DEFAULT_TRANSITION_MS, browserDom, createHoldDetector, createSessionChain, toMiniGameEntry, type ChainDeps, type ChainStep } from "./chain";
 import type { SessionGame } from "./game";
 
 const CHILD = "7d9e0a1b-2c3d-4e5f-8a9b-0c1d2e3f4a5b";
@@ -438,5 +438,50 @@ describe("createHoldDetector (the long press behind the skip control)", () => {
     d.up();
     expect(t.armed()).toBe(false);
     expect(n).toBe(0);
+  });
+});
+
+describe("browserDom.skip on a touch screen (Chrome for Android long press)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function fakeBox() {
+    const listeners: Record<string, Array<(e: unknown) => void>> = {};
+    const box = {
+      style: { cssText: "" },
+      setAttribute() {},
+      addEventListener: (type: string, fn: (e: unknown) => void) => ((listeners[type] ??= []).push(fn)),
+      remove() {},
+    };
+    const fire = (type: string) => {
+      const e = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() {} };
+      for (const fn of listeners[type] ?? []) fn(e);
+      return e;
+    };
+    return { box, fire };
+  }
+
+  it("a context menu opened by the long press is prevented and does not disarm the hold", () => {
+    vi.useFakeTimers();
+    const { box, fire } = fakeBox();
+    vi.stubGlobal("document", { createElement: () => box });
+    let skipped = 0;
+    browserDom.skip({ appendChild() {} } as unknown as HTMLElement, () => skipped++, 3000);
+    fire("pointerdown");
+    vi.advanceTimersByTime(1000);
+    const menu = fire("contextmenu");
+    expect(menu.defaultPrevented).toBe(true);
+    vi.advanceTimersByTime(2000);
+    expect(skipped).toBe(1);
+  });
+
+  it("the control opts out of the callout, text selection and browser gestures", () => {
+    const { box } = fakeBox();
+    vi.stubGlobal("document", { createElement: () => box });
+    browserDom.skip({ appendChild() {} } as unknown as HTMLElement, () => {}, 3000);
+    for (const css of ["-webkit-touch-callout:none", "user-select:none", "-webkit-user-select:none", "touch-action:none"])
+      expect(box.style.cssText).toContain(css);
   });
 });

@@ -227,12 +227,14 @@ export const browserDom: ChainDom = {
     // does nothing (a short press is ignored), and holds are rare. TODO (Person 4): where it should sit.
     const box = document.createElement("div");
     box.setAttribute("aria-label", "Skip this game (hold)");
-    box.style.cssText = "position:absolute;top:0;right:0;width:56px;height:56px;z-index:10;touch-action:none;opacity:0";
+    box.style.cssText = "position:absolute;top:0;right:0;width:56px;height:56px;z-index:10;touch-action:none;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none;opacity:0";
     const hold = createHoldDetector(holdMs, onSkip);
     box.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
       hold.down();
     });
+    // Chrome for Android opens a context menu on a long press and may then cancel the pointer: the menu is refused.
+    box.addEventListener("contextmenu", (e) => e.preventDefault());
     for (const type of ["pointerup", "pointercancel", "pointerleave"]) box.addEventListener(type, () => hold.up());
     el.appendChild(box);
     return {

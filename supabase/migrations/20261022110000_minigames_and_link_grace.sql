@@ -1,5 +1,6 @@
 -- PC-02 (docs/02 section 10.3, accepted by Hatem 2026-10-20) and the link lifetime for a longer session.
--- NOT APPLIED by the pull request that adds it: run it on the project after review (supabase db push).
+-- NOT APPLIED by the pull request that adds it: apply it by hand (SQL editor or apply_migration) after review and
+-- BEFORE merging, never with `supabase db push` (see supabase/migrations/README.md).
 --
 -- 1. sessions.minigames: the optional `minigames` array of SessionMetrics (results of the mini-games played after
 --    Lantern Watch). Nullable jsonb: a session without the field, and every row stored before this, keep null.
