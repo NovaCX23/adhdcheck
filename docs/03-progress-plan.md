@@ -70,9 +70,9 @@ Status values: `todo`, `doing`, `done`. Update in the same PR that changes the s
 | FR-34 | Fixed result wording | R4 with R5 | Must | todo | |
 | FR-35 | Next step and clinician summary | R4 with R5 | Must / Should | todo | |
 | FR-36 | Recommendations, no treatment claims | R4 with R5 | Should | todo | |
-| FR-37 | Parent-chosen missions | R4 | Should | todo | |
-| FR-38 | Progress chart | R4 | Should | todo | |
-| FR-39 | Result without manual refresh | R3 with R4 | Could | todo | |
+| FR-37 | Parent-chosen missions | R4 | Should | doing | data side (table, RLS, helpers): https://github.com/mateidragomir74/adhdcheck/pull/8 |
+| FR-38 | Progress chart | R4 | Should | doing | data side (helpers, seeded data): https://github.com/mateidragomir74/adhdcheck/pull/8 |
+| FR-39 | Result without manual refresh | R3 with R4 | Could | doing | Realtime on scores: https://github.com/mateidragomir74/adhdcheck/pull/8 |
 | FR-40 | Shareable result image | R4 | Could | todo | |
 | FR-41 | Delete child and all data | R3 | Must | doing | https://github.com/mateidragomir74/adhdcheck/pull/4, https://github.com/mateidragomir74/adhdcheck/pull/7 |
 | FR-42 | Landing page with QR | R4 | Should | todo | |

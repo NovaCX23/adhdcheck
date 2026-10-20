@@ -5,7 +5,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(13);
+select plan(16);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'demo-parent@example.test'),
@@ -53,6 +53,23 @@ select ok(
   (select bool_and((indicators ->> 'rt_cv')::numeric between 0 and 1 and (indicators ->> 'commission_rate')::numeric between 0 and 1)
    from public.scores where parent_id = '00000000-0000-0000-0000-00000000000a'),
   'rates are fractions between 0 and 1'
+);
+
+select results_eq(
+  $$ select count(*)::int, (count(*) filter (where status = 'done'))::int from public.missions
+     where parent_id = '00000000-0000-0000-0000-00000000000a' $$,
+  $$ values (6, 4) $$,
+  'six parent-chosen missions, four of them done (FR-37, FR-38)'
+);
+select ok(
+  (select bool_and(chosen_by = 'parent' and (status = 'done') = (done_at is not null)) from public.missions
+   where parent_id = '00000000-0000-0000-0000-00000000000a'),
+  'seeded missions are chosen by the parent, done_at only when done'
+);
+select is(
+  (select reasons from public.scores where parent_id = '00000000-0000-0000-0000-00000000000a' and band = 'follow_up_suggested' limit 1),
+  array['Response speed varied more than expected during the watch.', 'Tapped often when the game asked to wait.'],
+  'reason lines copied from research/04 section 7.3, one per flag'
 );
 
 -- FR-56: a second run gives the same content.
