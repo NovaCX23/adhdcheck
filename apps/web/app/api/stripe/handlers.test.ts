@@ -297,9 +297,10 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
       c.mailer === "permanent" ? { ok: false, permanent: true } : c.mailer === "transient" ? { ok: false, permanent: false } : { ok: true },
     );
     const verify = (payload: string, signature: string) => stripe.webhooks.constructEvent(payload, signature, SIGNING);
-    const expectedPrice = vi.fn<WebhookDeps["expectedPrice"]>().mockResolvedValue({ amount: 999, currency: "eur" });
-    const d: WebhookDeps = { verify, expectedPrice, markPaid, markEmailed, getParentEmail, buildPdf, mailer: c.mailer === "none" ? null : { send } };
-    return { d, row, markPaid, markEmailed, getParentEmail, buildPdf, send, expectedPrice };
+    const lineItemPrices = vi.fn<WebhookDeps["lineItemPrices"]>().mockResolvedValue([PRICE]);
+    const markNotPaid = vi.fn<WebhookDeps["markNotPaid"]>().mockResolvedValue(undefined);
+    const d: WebhookDeps = { verify, priceId: PRICE, lineItemPrices, markNotPaid, markPaid, markEmailed, getParentEmail, buildPdf, mailer: c.mailer === "none" ? null : { send } };
+    return { d, row, markPaid, markEmailed, getParentEmail, buildPdf, send, lineItemPrices, markNotPaid };
   }
 
   it.each(["checkout.session.completed", "checkout.session.async_payment_succeeded"])(
@@ -435,31 +436,110 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("R3-P4 records nothing for a checkout with no payment required (a 100% coupon), even if the status is complete", async () => {
-    const { d, markPaid, send } = deps();
-    expect((await handleWebhook(signed(event({ payment_status: "no_payment_required", amount_total: 0 })), d)).status).toBe(200);
+  // R4-3: this test used to pass only because amount_total 0 tripped the price check. Now the amount is the
+  // right one, so only the payment_status guard can stop it.
+  it("R4-3 records nothing for a checkout with no payment required, with the right amount and price", async () => {
+    const { d, markPaid, send, lineItemPrices } = deps();
+    expect((await handleWebhook(signed(event({ payment_status: "no_payment_required" })), d)).status).toBe(200);
     expect(markPaid).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+    expect(lineItemPrices).not.toHaveBeenCalled();
+  });
+
+  it("R4-3 pays out a discounted checkout: the line item is the configured price, whatever amount_total is", async () => {
+    const { d, markPaid } = deps();
+    expect((await handleWebhook(signed(event({ amount_total: 499 })), d)).status).toBe(200);
+    expect(markPaid).toHaveBeenCalledTimes(1);
   });
 
   it.each([
-    ["a different amount", { amount_total: 100 }],
-    ["a different currency", { currency: "usd" }],
-  ])("R3-P4 records nothing when the Checkout was paid with %s than the configured price", async (_n, over) => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { d, markPaid, send } = deps();
-    expect((await handleWebhook(signed(event(over)), d)).status).toBe(200);
+    ["another price", ["price_other"]],
+    ["two line items", [PRICE, "price_other"]],
+    ["no line item", []],
+  ])("R4-3 records nothing and logs an error with the checkout id for %s", async (_n, prices) => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { d, markPaid, send, lineItemPrices } = deps();
+    lineItemPrices.mockResolvedValue(prices);
+    expect((await handleWebhook(signed(event()), d)).status).toBe(200);
+    expect(lineItemPrices).toHaveBeenCalledWith(CHECKOUT);
     expect(markPaid).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith("[stripe] webhook", { outcome: "price_mismatch" });
+    expect(error).toHaveBeenCalledWith("[stripe] webhook needs review", { outcome: "price_mismatch", checkout: CHECKOUT });
   });
 
-  it("R3-P4 answers 500 so Stripe retries when the configured price cannot be read", async () => {
+  it("R4-3 answers 500 so Stripe retries when the line items cannot be read", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const { d, expectedPrice, markPaid } = deps();
-    expectedPrice.mockRejectedValue(new Error("stripe down"));
+    const { d, lineItemPrices, markPaid } = deps();
+    lineItemPrices.mockRejectedValue(new Error("stripe down"));
     expect((await handleWebhook(signed(event()), d)).status).toBe(500);
     expect(markPaid).not.toHaveBeenCalled();
+  });
+
+  it("R4-3 answers 500 with an error log and records nothing when no price is configured", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { d, markPaid } = deps();
+    expect((await handleWebhook(signed(event()), { ...d, priceId: undefined })).status).toBe(500);
+    expect(markPaid).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalled();
+  });
+
+  // R4-2: a delayed payment that fails, or a Checkout that expires, must not block a new checkout forever.
+  it.each([
+    ["checkout.session.async_payment_failed", "failed"],
+    ["checkout.session.expired", "expired"],
+  ])("R4-2 on %s marks the purchase %s and sends nothing", async (type, status) => {
+    const { d, markNotPaid, markPaid, send } = deps();
+    expect((await handleWebhook(signed(event({ type, payment_status: "unpaid" })), d)).status).toBe(200);
+    expect(markNotPaid).toHaveBeenCalledWith(CHECKOUT, status);
+    expect(markPaid).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("R4-2 ignores a failed or expired event of a checkout that is not a one-off payment", async () => {
+    const { d, markNotPaid } = deps();
+    await handleWebhook(signed(event({ type: "checkout.session.expired", mode: "subscription" })), d);
+    expect(markNotPaid).not.toHaveBeenCalled();
+  });
+
+  it("R4-2 answers 500 so Stripe retries when the failure cannot be recorded", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { d, markNotPaid } = deps();
+    markNotPaid.mockRejectedValue(new Error("db down"));
+    expect((await handleWebhook(signed(event({ type: "checkout.session.async_payment_failed", payment_status: "unpaid" })), d)).status).toBe(500);
+  });
+
+  it("R4-2 end to end: after a delayed payment failed, the parent can open a new Checkout", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const rows = [{ id: CHECKOUT, status: "pending" }];
+    const w = deps();
+    w.markNotPaid.mockImplementation(async (id, status) => {
+      const r = rows.find((x) => x.id === id);
+      if (r && r.status === "pending") r.status = status;
+    });
+    const c = (() => {
+      const base = new Request("https://x.example.test", { method: "POST" });
+      void base;
+      const createCheckoutSession = vi.fn<CheckoutDeps["createCheckoutSession"]>().mockResolvedValue({ id: "cs_new", url: "https://checkout.example.test/new" });
+      const d: CheckoutDeps = {
+        getParentId: async () => PARENT,
+        priceId: PRICE,
+        siteUrl: "https://site.example.test",
+        getOwnSession: async () => ({ childId: CHILD, band: "no_flag" }),
+        isPaid: async () => false,
+        // what listPendingCheckoutIds returns: pending rows only
+        pendingCheckouts: async () => rows.filter((r) => r.status === "pending").map((r) => r.id),
+        // Stripe still reports the delayed payment as complete and unpaid
+        retrieveCheckout: async () => ({ status: "complete", paymentStatus: "unpaid", url: null }),
+        createCheckoutSession,
+        startPurchase: async () => "started",
+      };
+      return { d, createCheckoutSession };
+    })();
+    expect((await handleCheckout(post("/api/stripe/checkout"), c.d)).status).toBe(409); // still waiting for the bank
+    await handleWebhook(signed(event({ type: "checkout.session.async_payment_failed", payment_status: "unpaid" })), w.d);
+    const res = await handleCheckout(post("/api/stripe/checkout"), c.d);
+    expect(res.status).toBe(200);
+    expect(c.createCheckoutSession).toHaveBeenCalledTimes(1);
   });
 
   it("R3-P2 sends no email for a legacy paid purchase whose session has too little data", async () => {

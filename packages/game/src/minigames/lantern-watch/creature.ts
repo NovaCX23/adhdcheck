@@ -42,3 +42,23 @@ export class CreatureView {
     this.fireflyShown = false;
   }
 }
+
+type Shown = { visible: boolean };
+
+/** Copies what the creature view says onto the two three.js nodes. */
+export function syncCreatures(view: CreatureView, moth: Shown, firefly: Shown): void {
+  moth.visible = view.visible.moth;
+  firefly.visible = view.visible.firefly;
+}
+
+/** A trial lights its creature (the scene calls this inside the frame that draws the onset). */
+export function startStimulus(view: CreatureView, type: CreatureType, moth: Shown, firefly: Shown): void {
+  view.show(type);
+  syncCreatures(view, moth, firefly);
+}
+
+/** The stimulus time is over: the creature is off the screen in this very frame. */
+export function endStimulus(view: CreatureView, moth: Shown, firefly: Shown): void {
+  view.hide();
+  syncCreatures(view, moth, firefly);
+}

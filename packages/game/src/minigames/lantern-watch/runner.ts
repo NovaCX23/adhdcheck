@@ -102,8 +102,9 @@ export class LanternWatchRunner {
   private block = 0;
   private cur: ActiveTrial | null = null;
   // The last trial that closed without a response, kept open to events stamped inside its window but delivered
-  // after the frame that closed it (a busy main thread). patch() writes the response into its record.
-  private lastClosed: { trial: ActiveTrial; windowMs: number; patch(tMs: number, x: number, y: number): void } | null = null;
+  // after the frame that closed it (a busy main thread). patch() writes the response into its record and answers
+  // false when that record no longer exists (a calibration round that was thrown away).
+  private lastClosed: { trial: ActiveTrial; windowMs: number; patch(tMs: number, x: number, y: number): boolean } | null = null;
 
   constructor(cfg: RunnerConfig, hooks: RunnerHooks = {}) {
     this.task = cfg.task;
@@ -157,9 +158,9 @@ export class LanternWatchRunner {
           tMs < late.trial.onset + late.windowMs &&
           (!c || c.onset === null || tMs < c.onset)
         ) {
-          late.patch(tMs, x, y);
+          const patched = late.patch(tMs, x, y);
           this.lastClosed = null;
-          return "response";
+          if (patched) return "response";
         }
         if (c && c.onset !== null && tMs >= c.onset && !c.responded && lantern === c.lantern) {
           const window = c.type === "calibration" ? RESPONSE_WINDOW_MS : this.task.stimulusMs + c.isiMs;
@@ -260,11 +261,13 @@ export class LanternWatchRunner {
         // No firefly tapped at all: the contract cannot carry a calibration without a median (#27 returns null),
         // so the round is run again and only the new round is recorded. TODO team: design choice.
         this.calibRecords = [];
+        this.lastClosed = null; // a late tap of the discarded round must not reach the new one
         this.setState("calib", ts);
         this.nextCalibration(ts);
         return;
       }
       this.records.push(...this.calibRecords.map((t, i) => ({ ...t, i })));
+      this.lastClosed = null; // the calibration records were copied; the task trials start from a clean slate
       this.setState("practice-intro", ts);
       return;
     }
@@ -286,13 +289,16 @@ export class LanternWatchRunner {
         const build = (tapMs: number | null, x: number, y: number) =>
           toContractTrial({ i: at, onsetMs: c.onset as number, tapMs, x, y }, this.t0, RESPONSE_WINDOW_MS);
         this.calibRecords.push(build(c.responded ? (c.onset as number) + (c.rtMs as number) : null, c.x, c.y));
+        const round = this.calibRecords; // the array this record lives in
         this.lastClosed = c.responded
           ? null
           : {
               trial: c,
               windowMs: RESPONSE_WINDOW_MS,
               patch: (tMs, x, y) => {
-                this.calibRecords[at] = build(tMs, x, y);
+                if (this.calibRecords !== round || round[at] === undefined) return false; // that round was discarded
+                round[at] = build(tMs, x, y);
+                return true;
               },
             };
       } else this.lastClosed = null;
@@ -374,6 +380,7 @@ export class LanternWatchRunner {
           trial: c,
           windowMs: this.task.stimulusMs + c.isiMs,
           patch: (tMs, x, y) => {
+            if (this.records[at] === undefined) return false;
             const rt = tMs - onset;
             this.records[at] = {
               ...(this.records[at] as Trial),
@@ -383,6 +390,7 @@ export class LanternWatchRunner {
               x,
               y,
             };
+            return true;
           },
         };
     this.records.push({

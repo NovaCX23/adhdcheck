@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getReportPurchase } from "../../../lib/data/parent";
 import { createLazyClient } from "../../../lib/supabase/client";
 import { S } from "../strings";
-import { reportView, type ReportView } from "./report-view";
+import { reportView, viewAfterCheckoutConflict, type ReportView } from "./report-view";
 import { ErrorNote, buttonPrimary, buttonQuiet, postJson } from "./shell";
 
 // D-05 and D-05b (DECIDED, Hatem, 2026-10-20): the detailed report is the only paid feature, 9.99 EUR, paid
@@ -21,16 +21,18 @@ export function ReportDownload({ sessionId, band }: { sessionId: string; band: s
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // Bumped when checkout answers 409: the page then waits for the payment and polls, like after a return.
+  const [conflicts, setConflicts] = useState(0);
 
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const returning = new URLSearchParams(window.location.search).get("report") === "paid";
+    const returning = conflicts > 0 || new URLSearchParams(window.location.search).get("report") === "paid";
     const check = async (left: number) => {
       const purchase = await getReportPurchase(client, sessionId).catch(() => null);
       if (!live) return;
       // Back from checkout and not yet paid: keep the wait message (never the offer, so nobody pays twice).
-      const next = reportView(purchase, returning, band);
+      const next = reportView(purchase, returning, band, { pollsLeft: left });
       setView(next);
       if (next === "confirming" && left > 0) timer = setTimeout(() => void check(left - 1), CONFIRM_EVERY_MS);
     };
@@ -39,7 +41,7 @@ export function ReportDownload({ sessionId, band }: { sessionId: string; band: s
       live = false;
       if (timer) clearTimeout(timer);
     };
-  }, [client, sessionId, band]);
+  }, [client, sessionId, band, conflicts]);
 
   async function download() {
     setBusy(true);
@@ -68,8 +70,10 @@ export function ReportDownload({ sessionId, band }: { sessionId: string; band: s
       return;
     }
     // 409: a Checkout for this report was already paid or is being paid (late webhook, delayed payment).
-    if (res?.status === 409) setView(body?.error === "insufficient_data" ? "none" : "confirming");
-    else setNote(S.billing.unavailable);
+    if (res?.status === 409) {
+      setView(viewAfterCheckoutConflict(body?.error));
+      if (body?.error !== "insufficient_data") setConflicts((n) => n + 1);
+    } else setNote(S.billing.unavailable);
     setBusy(false);
   }
 

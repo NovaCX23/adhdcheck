@@ -20,7 +20,7 @@ export function WeeklyEmail() {
           try {
             const res = await postJson("/api/emails/weekly");
             const body = (await res.json().catch(() => ({}))) as { email?: string };
-            setState(res.ok && body.email === "sent" ? "sent" : body.email === "skipped" ? "skipped" : "failed");
+            setState(res.ok && (body.email === "sent" || body.email === "already_sent") ? "sent" : body.email === "skipped" ? "skipped" : "failed");
           } catch {
             setState("failed");
           }

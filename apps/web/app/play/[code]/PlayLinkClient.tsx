@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type Ref } from "react";
 import { resolvePlayLink, uploadSession, type Consent } from "@/lib/play-client";
+import { createUnlockedAudioContext } from "@/lib/audio-unlock";
 import { runPlayFlow, type Screen } from "./flow";
 import { sessionGame, type SessionGameRun } from "./game";
 import { PLAY_STRINGS } from "./strings";
@@ -36,6 +37,8 @@ export function PlayLinkClient({ code }: { code: string }) {
   const [screen, setScreen] = useState<Screen>({ kind: "checking" });
   const gameRef = useRef<HTMLDivElement>(null);
   const startRef = useRef<() => void>(() => {});
+  // Created inside the start tap (a user gesture) and handed to the game, which reuses it.
+  const audioRef = useRef<AudioContext | null>(null);
 
   // R3-L1: leaving the page (or React dev mode running the effect twice) stops the game that was started and
   // ends the flow, so no render loop, WebGL context, AudioContext or listener is left running and a return
@@ -50,7 +53,7 @@ export function PlayLinkClient({ code }: { code: string }) {
         ? (childId, consent) => {
             const el = gameRef.current;
             if (!el) throw new Error("game container missing");
-            run = game(el, childId, consent);
+            run = game(el, childId, consent, audioRef.current ?? undefined);
             return run.promise;
           }
         : null,
@@ -64,10 +67,16 @@ export function PlayLinkClient({ code }: { code: string }) {
     return () => {
       controller.abort();
       run?.destroy();
+      if (!run) void audioRef.current?.close().catch(() => undefined); // never handed to a game
+      audioRef.current = null;
     };
   }, [code]);
 
-  return <PlayScreen screen={screen} gameRef={gameRef} onStart={() => startRef.current()} />;
+  return <PlayScreen screen={screen} gameRef={gameRef} onStart={() => {
+        audioRef.current ??= createUnlockedAudioContext();
+        startRef.current();
+      }}
+    />;
 }
 
 // FR-70: the child-friendly explanation, shown only when the parent switched a sensor on.

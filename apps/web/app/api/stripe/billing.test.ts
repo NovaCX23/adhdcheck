@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Resend } from "resend";
-import { getParentEmail, resendMailer } from "./billing";
+import { getParentEmail, markNotPaid, resendMailer } from "./billing";
 import type { ReportMail } from "./handlers";
 
 const MAIL: ReportMail = {
@@ -53,5 +53,17 @@ describe("resendMailer (R3-P3)", () => {
     expect(await m({ statusCode: 403, name: "validation_error" })).toEqual({ ok: false, permanent: true });
     expect(await m({ statusCode: 429, name: "rate_limit_exceeded" })).toEqual({ ok: false, permanent: false });
     expect(await m({ statusCode: 500, name: "application_error" })).toEqual({ ok: false, permanent: false });
+  });
+});
+
+describe("markNotPaid (R4-2)", () => {
+  it("calls mark_report_not_paid with the checkout id and the status", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: true, error: null });
+    await markNotPaid({ rpc } as unknown as SupabaseClient, "cs_test", "failed");
+    expect(rpc).toHaveBeenCalledWith("mark_report_not_paid", { p_checkout_id: "cs_test", p_status: "failed" });
+  });
+  it("throws when the database fails, so the webhook answers 500", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: "down" } });
+    await expect(markNotPaid({ rpc } as unknown as SupabaseClient, "cs_test", "expired")).rejects.toThrow();
   });
 });

@@ -152,6 +152,7 @@ export async function getReportPurchase(client: SupabaseClient, sessionId: strin
     .from("report_purchases")
     .select("status, emailed_at")
     .eq("session_id", sessionId)
+    .in("status", ["pending", "paid"]) // failed and expired attempts are history, not the state of the report
     .order("paid_at", { ascending: false, nullsFirst: false })
     .limit(1);
   return check<ReportPurchase[]>(result, "read report purchase")[0] ?? null;
@@ -165,7 +166,8 @@ export async function listPendingCheckoutIds(client: SupabaseClient, sessionId: 
     .select("stripe_checkout_session_id")
     .eq("session_id", sessionId)
     .eq("status", "pending")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(5); // a Checkout lives 24 hours; failed and expired rows are not listed, so this stays short
   return check<{ stripe_checkout_session_id: string }[]>(result, "list pending checkouts").map((r) => r.stripe_checkout_session_id);
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SessionMetricsSchema } from "@adhdcheck/contracts";
 import { DEFAULT_TASK, type TaskConfig } from "./logic";
+import { RESPONSE_WINDOW_MS } from "../wake-fireflies/logic";
 import { BREAK_MIN_MS, LanternWatchRunner, type ActiveTrial, type RunData, type RunState } from "./runner";
 import { buildSessionMetrics } from "./session";
 
@@ -293,6 +294,42 @@ describe("LanternWatchRunner, a tap delivered after the frame that closed its tr
           cross_origin_isolated: false,
           timer_clock: "performance.now",
         },
+        trials: data.trials,
+        offTargetTaps: data.off_target_taps,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("LanternWatchRunner, a late tap on the last trial of a calibration round that restarts (R4-1)", () => {
+  // Round 1: nothing tapped on trials 1 to 9, the 10th is tapped inside its window but delivered 1.5 frames late.
+  // The round is already over with no hit, so it restarts; the late tap must not write into the new round.
+  let round1 = 0;
+  const child: Child = (tr, onset) => {
+    if (tr.phase === "calibration") {
+      round1 += 1;
+      if (round1 < 10) return [];
+      if (round1 === 10) return [{ t: onset + RESPONSE_WINDOW_MS - 5, lantern: tr.lantern, deliver: onset + RESPONSE_WINDOW_MS + FRAME * 1.5 }];
+    }
+    return tr.type === "nogo" ? [] : [{ t: onset + 400, lantern: tr.lantern }];
+  };
+  const { data } = sim({ child });
+
+  it("leaves no empty slot in the recorded trials", () => {
+    expect(data.trials.every((t) => t !== undefined)).toBe(true);
+    expect(data.trials).toHaveLength(154);
+    expect(data.trials.map((t) => t.i)).toEqual(data.trials.map((_, k) => k));
+  });
+
+  it("still builds a valid payload", () => {
+    expect(() =>
+      buildSessionMetrics({
+        sessionId: "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b",
+        childId: "7d9e0a1b-2c3d-4e5f-8a9b-0c1d2e3f4a5b",
+        startedAt: "2026-10-20T10:00:00.000Z",
+        durationMs: data.duration_ms,
+        task: DEFAULT_TASK,
+        device: { user_agent: "t", pointer_type: "touch", screen_w: 800, screen_h: 600, device_pixel_ratio: 1, est_refresh_hz: 60, cross_origin_isolated: false, timer_clock: "performance.now" },
         trials: data.trials,
         offTargetTaps: data.off_target_taps,
       }),

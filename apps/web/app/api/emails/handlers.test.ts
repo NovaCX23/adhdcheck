@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { missionAddedEmail, weeklySummaryEmail } from "../../../lib/email/messages";
 import type { EmailSender } from "../../../lib/email/sender";
 import type { RateLimiter } from "../../../lib/rate-limit";
-import { handleMissionEmail, handleWeeklySummaryEmail, isoWeek } from "./handlers";
+import { handleMissionEmail, handleWeeklySummaryEmail, isoWeek, WEEKLY_EMAIL_LIMIT } from "./handlers";
 
 const PARENT = { id: "00000000-0000-4000-8000-00000000000a", email: "parent.synthetic@example.test" };
 const MISSION = "00000000-0000-4000-8000-0000000000aa";
@@ -121,6 +121,44 @@ describe("POST /api/emails/weekly (FR-50 weekly summary)", () => {
       message: weeklySummaryEmail(DASHBOARD),
       idempotencyKey: `weekly-summary/${PARENT.id}/2026-W43`,
     });
+  });
+
+  // R4-6: Resend keeps an idempotency key 24 hours (https://resend.com/docs/dashboard/emails/idempotency-keys),
+  // so "at most one per week" is enforced here, with a bucket per parent per ISO week.
+  it("R4-6 takes one slot per parent per ISO week, and sends nothing when this week's slot is used", async () => {
+    const d = deps();
+    d.take.mockImplementation(async (key) => !key.startsWith("weekly-email:"));
+    const res = await handleWeeklySummaryEmail(request("/api/emails/weekly", {}), d);
+    expect(await res.json()).toEqual({ email: "already_sent" });
+    expect(d.take).toHaveBeenCalledWith(`weekly-email:${PARENT.id}:2026-W43`, WEEKLY_EMAIL_LIMIT);
+    expect(d.email.send).not.toHaveBeenCalled();
+  });
+
+  it("R4-6 sends when the week's slot is free, and a new week has a new slot", async () => {
+    const d = deps();
+    await handleWeeklySummaryEmail(request("/api/emails/weekly", {}), d);
+    expect(d.email.send).toHaveBeenCalledTimes(1);
+    const later = { ...deps(), now: () => new Date("2026-10-27T12:00:00Z") };
+    await handleWeeklySummaryEmail(request("/api/emails/weekly", {}), later);
+    expect(later.take).toHaveBeenCalledWith(`weekly-email:${PARENT.id}:2026-W44`, WEEKLY_EMAIL_LIMIT);
+  });
+
+  it("R4-6 does not use up the week's slot when the email cannot be built (no SITE_URL)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = deps({ siteUrl: undefined });
+    await handleWeeklySummaryEmail(request("/api/emails/weekly", {}), d);
+    expect(d.take.mock.calls.some(([key]) => key.startsWith("weekly-email:"))).toBe(false);
+  });
+
+  it("R4-6 answers 503 and sends nothing when the weekly counter is down", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = deps();
+    d.take.mockImplementation(async (key) => {
+      if (key.startsWith("weekly-email:")) throw new Error("down");
+      return true;
+    });
+    expect((await handleWeeklySummaryEmail(request("/api/emails/weekly", {}), d)).status).toBe(503);
+    expect(d.email.send).not.toHaveBeenCalled();
   });
 
   it("R3-E2 refuses an unconfirmed address and rate limits the weekly route too", async () => {

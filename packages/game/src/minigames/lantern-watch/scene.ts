@@ -34,7 +34,7 @@ import { buildLuma, makeOutlineMaterial, outline, type LumaRig } from "../bridge
 import { Particles } from "../bridge-wait/scene";
 import { WATER_Y, buildWorld, type World } from "../bridge-wait/world";
 import { isPrimaryPointer } from "../../pointer";
-import { CreatureView } from "./creature";
+import { CreatureView, endStimulus, startStimulus, syncCreatures } from "./creature";
 import { forwardPointerDown } from "./input";
 import { estimateRefreshHz, hitRadius, normalizePointerType, type PointerKind, type TaskConfig } from "./logic";
 import { buildFirefly, buildLanterns, buildMoth, GLASS_OFF, GO_GLASS, GO_HALO, NOGO_GLASS, NOGO_HALO, type Lantern } from "./props";
@@ -50,6 +50,8 @@ export interface SceneOptions {
   anticipationMs: number | null;
   assetBase: string;
   autoStart: boolean;
+  /** Created and resumed by the play page inside its start tap; the game uses it instead of making its own. */
+  audioContext?: AudioContext;
   onComplete?: (metrics: SessionMetrics) => void;
   onError?: (err: unknown) => void;
 }
@@ -91,7 +93,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
   const owner = Math.random().toString(36).slice(2);
   parent.dataset.lwOwner = owner;
   const ui = buildUi(parent);
-  const audio = new GameAudio(opts.assetBase);
+  const audio = new GameAudio(opts.assetBase, opts.audioContext);
   audio.prefetch();
 
   let renderer: WebGLRenderer;
@@ -165,10 +167,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
   let lit: { lantern: number; type: ActiveTrial["type"]; start: number } | null = null;
   let flight: { from: Vector3; start: number } | null = null;
   const creature = new CreatureView();
-  const showCreatures = () => {
-    moth.root.visible = creature.visible.moth;
-    firefly.root.visible = creature.visible.firefly;
-  };
+  const showCreatures = () => syncCreatures(creature, moth.root, firefly.root);
   let handTarget: { lantern: number; mode: "press" | "hold" } | null = null;
   let decorTarget = 1;
   let decorLevel = 0;
@@ -205,7 +204,6 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
     lampLight.intensity = go ? LIGHT_ON : LIGHT_ON * 0.55;
     lampLight.position.set(l.centre.x, l.centre.y + 0.2, l.centre.z + 0.9);
     lit = { lantern: trial.lantern, type: trial.type, start: ts };
-    creature.show(trial.type);
     if (go) {
       flight = null;
       firefly.root.position.set(l.centre.x, l.centre.y - 0.02, l.centre.z + 0.62);
@@ -215,7 +213,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
       moth.root.position.set(l.centre.x, l.centre.y - 0.08, l.centre.z + 0.42);
       moth.root.scale.setScalar(MOTH_SCALE);
     }
-    showCreatures(); // a firefly still flying to Luma finishes its flight
+    startStimulus(creature, trial.type, moth.root, firefly.root); // a firefly still flying to Luma finishes its flight
   };
 
   const unlight = () => {
@@ -223,8 +221,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
     lanternOff(lit.lantern);
     lampLight.intensity = 0;
     // The creature is gone in this very frame: stimulus_ms is the time it is shown (see creature.ts).
-    creature.hide();
-    showCreatures();
+    endStimulus(creature, moth.root, firefly.root);
     lit = null;
   };
 

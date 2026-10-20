@@ -10,9 +10,19 @@ export function reportView(
   purchase: Pick<ReportPurchase, "status" | "emailed_at"> | null,
   returningFromCheckout: boolean,
   band: string,
+  // pollsLeft: how many more checks of the purchase the page will make; at 0 a pending purchase stops
+  // saying "confirming" and offers to resume instead (R4-4).
+  poll: { pollsLeft: number } = { pollsLeft: 1 },
 ): ReportView {
   if (purchase?.status === "paid") return purchase.emailed_at ? "paid_emailed" : "paid";
   if (band === "insufficient_data") return "none";
-  if (returningFromCheckout) return "confirming";
+  if (returningFromCheckout) return purchase?.status === "pending" && poll.pollsLeft <= 0 ? "in_progress" : "confirming";
   return purchase?.status === "pending" ? "in_progress" : "offer";
+}
+
+// POST /api/stripe/checkout answered 409: a payment for this report exists or is on its way (already_paid when
+// Stripe says paid, payment_pending for a delayed method), or the session cannot be bought. The page waits for
+// the server record (and polls for it), it never claims "paid" itself.
+export function viewAfterCheckoutConflict(error: string | undefined): ReportView {
+  return error === "insufficient_data" ? "none" : "confirming";
 }

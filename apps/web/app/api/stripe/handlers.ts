@@ -150,9 +150,13 @@ export type PaidOutcome = { outcome: string; emailed: boolean };
 export type WebhookDeps = {
   // Stripe signature check (stripe.webhooks.constructEvent with STRIPE_WEBHOOK_SECRET); throws when invalid.
   verify(payload: string, signature: string): Stripe.Event;
-  // The amount (smallest currency unit) and currency of the configured price, read from Stripe; throws when
-  // Stripe cannot say.
-  expectedPrice(): Promise<{ amount: number; currency: string }>;
+  // STRIPE_PRICE_ID: the only price a paid checkout may hold.
+  priceId: string | undefined;
+  // The price ids of the Checkout Session's line items, read from Stripe (sessions.listLineItems); throws when
+  // Stripe cannot say. The price id is compared, not amount_total: a coupon or tax changes the total, not the item.
+  lineItemPrices(checkoutId: string): Promise<string[]>;
+  // A delayed payment failed or the Checkout expired: the pending purchase stops blocking a new checkout.
+  markNotPaid(checkoutId: string, status: "failed" | "expired"): Promise<void>;
   markPaid(input: { checkoutId: string; parentId: string; sessionId: string; lang: EmailLang }): Promise<PaidOutcome>;
   markEmailed(checkoutId: string): Promise<void>;
   // The email of the parent who paid, from Supabase auth (never from the request or Stripe).
@@ -164,6 +168,12 @@ export type WebhookDeps = {
 };
 
 const PAID_EVENTS = new Set(["checkout.session.completed", "checkout.session.async_payment_succeeded"]);
+// https://docs.stripe.com/checkout/fulfillment (listen for checkout.session.async_payment_failed too) and
+// https://docs.stripe.com/api/events/types (checkout.session.expired).
+const NOT_PAID_EVENTS: Record<string, "failed" | "expired"> = {
+  "checkout.session.async_payment_failed": "failed",
+  "checkout.session.expired": "expired",
+};
 const Metadata = z.object({ parent_id: Uuid, session_id: Uuid, lang: z.enum(["ro", "en"]).catch("en") });
 
 function note(outcome: string) {
@@ -187,6 +197,19 @@ export async function handleWebhook(request: Request, deps: WebhookDeps): Promis
     return fail(400, "invalid_signature");
   }
 
+  const notPaid = NOT_PAID_EVENTS[event.type];
+  if (notPaid) {
+    const closed = event.data.object as Stripe.Checkout.Session;
+    if (closed.mode !== "payment") return Response.json({ received: true });
+    try {
+      await deps.markNotPaid(closed.id, notPaid);
+    } catch {
+      console.error("[stripe] webhook failed", { error: "storage_unavailable" });
+      return fail(500, "storage_unavailable");
+    }
+    return Response.json({ received: true });
+  }
+
   if (!PAID_EVENTS.has(event.type)) return Response.json({ received: true });
   const checkout = event.data.object as Stripe.Checkout.Session;
   if (checkout.mode !== "payment") return Response.json({ received: true });
@@ -197,10 +220,14 @@ export async function handleWebhook(request: Request, deps: WebhookDeps): Promis
   if (!meta.success) return note("bad_metadata");
   const { parent_id: parentId, session_id: sessionId, lang } = meta.data;
 
+  // The Checkout must hold exactly the configured price. A mismatch after money was taken is logged at error
+  // level with the Checkout id so it is reviewed by hand (Stripe Dashboard), never silently dropped.
   try {
-    const expected = await deps.expectedPrice();
-    if (checkout.amount_total !== expected.amount || (checkout.currency ?? "").toLowerCase() !== expected.currency.toLowerCase()) {
-      return note("price_mismatch");
+    if (!deps.priceId) throw new Error("no configured price");
+    const prices = await deps.lineItemPrices(checkout.id);
+    if (prices.length !== 1 || prices[0] !== deps.priceId) {
+      console.error("[stripe] webhook needs review", { outcome: "price_mismatch", checkout: checkout.id });
+      return Response.json({ received: true });
     }
   } catch {
     console.error("[stripe] webhook failed", { error: "billing_unavailable" });

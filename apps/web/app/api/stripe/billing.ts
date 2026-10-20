@@ -38,6 +38,11 @@ export async function markPaid(
   return { outcome: row.outcome, emailed: row.emailed };
 }
 
+export async function markNotPaid(admin: SupabaseClient, checkoutId: string, status: "failed" | "expired"): Promise<void> {
+  const { error } = await admin.rpc("mark_report_not_paid", { p_checkout_id: checkoutId, p_status: status });
+  if (error) throw new Error(`mark not paid failed: ${error.message}`);
+}
+
 export async function markEmailed(admin: SupabaseClient, checkoutId: string): Promise<void> {
   const { error } = await admin.rpc("mark_report_emailed", { p_checkout_id: checkoutId });
   if (error) throw new Error(`mark emailed failed: ${error.message}`);

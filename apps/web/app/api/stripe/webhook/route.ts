@@ -3,7 +3,7 @@
 import { Resend } from "resend";
 import { createStripeClient } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildPdfFor, getParentEmail, markEmailed, markPaid, resendMailer } from "../billing";
+import { buildPdfFor, getParentEmail, markEmailed, markNotPaid, markPaid, resendMailer } from "../billing";
 import { resolveEmailFrom } from "@/lib/email/sender";
 import { handleWebhook } from "../handlers";
 
@@ -25,13 +25,12 @@ export async function POST(request: Request) {
   const mailer = mailKey && from ? resendMailer(new Resend(mailKey), from) : null;
   return handleWebhook(request, {
     verify: (payload, signature) => stripe.webhooks.constructEvent(payload, signature, signingValue),
-    expectedPrice: async () => {
-      const priceId = process.env.STRIPE_PRICE_ID;
-      if (!priceId) throw new Error("STRIPE_PRICE_ID is not set");
-      const price = await stripe.prices.retrieve(priceId);
-      if (price.unit_amount === null) throw new Error("price without a fixed amount");
-      return { amount: price.unit_amount, currency: price.currency };
+    priceId: process.env.STRIPE_PRICE_ID,
+    lineItemPrices: async (checkoutId) => {
+      const items = await stripe.checkout.sessions.listLineItems(checkoutId, { limit: 10 });
+      return items.data.map((i) => i.price?.id ?? "");
     },
+    markNotPaid: (checkoutId, status) => markNotPaid(admin, checkoutId, status),
     markPaid: (input) => markPaid(admin, input),
     markEmailed: (checkoutId) => markEmailed(admin, checkoutId),
     getParentEmail: (parentId) => getParentEmail(admin, parentId),

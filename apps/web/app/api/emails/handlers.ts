@@ -21,6 +21,11 @@ type Deps = {
 
 // TODO: limit not decided (docs/02 NFR-13). Placeholder: 10 emails a minute per parent, for all email routes.
 export const EMAILS_RATE_LIMIT = { limit: 10, windowSeconds: 60 };
+// One weekly summary per parent per ISO week. Resend keeps an idempotency key for 24 hours only
+// (https://resend.com/docs/dashboard/emails/idempotency-keys), so the week is enforced here, with a bucket per
+// parent and week. The window outlasts the week, and the key changes with the week. A send that fails still
+// uses the week's slot (the limiter cannot give it back).
+export const WEEKLY_EMAIL_LIMIT = { limit: 1, windowSeconds: 8 * 86_400 };
 
 // The checks every email route runs first. Returns the parent, or the response to send.
 async function guard(deps: Deps): Promise<{ parent: Parent } | { response: Response }> {
@@ -93,6 +98,14 @@ export async function handleWeeklySummaryEmail(_request: Request, deps: Deps): P
   const link = dashboardUrl(deps);
   if (!link) return Response.json({ email: "skipped" }, { headers: { "cache-control": "no-store" } });
   const week = isoWeek((deps.now ?? (() => new Date()))());
+  try {
+    if (!(await deps.rateLimiter.take(`weekly-email:${parent.id}:${week}`, WEEKLY_EMAIL_LIMIT))) {
+      return Response.json({ email: "already_sent" }, { headers: { "cache-control": "no-store" } });
+    }
+  } catch {
+    console.error("[emails] failed", { error: "storage_unavailable" });
+    return fail(503, "storage_unavailable");
+  }
   const email = await deps.email.send({
     to: parent.email,
     message: weeklySummaryEmail(link),

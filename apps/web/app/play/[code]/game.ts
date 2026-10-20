@@ -13,12 +13,14 @@ import { PLAY_STRINGS } from "./strings";
 // destroy() stops the game (render loop, WebGL, audio, listeners) and is what the page calls when it is left
 // (R3-L1); after it the promise never settles, so nothing is uploaded.
 export type SessionGameRun = { promise: Promise<SessionMetrics>; destroy(): void };
-export type SessionGame = (el: HTMLElement, childId: string, consent: Consent) => SessionGameRun;
+// audioContext: created and resumed by the page inside the start tap (lib/audio-unlock.ts); the game reuses it.
+export type SessionGame = (el: HTMLElement, childId: string, consent: Consent, audioContext?: AudioContext) => SessionGameRun;
 
 type Handle = { destroy(): void };
 type MountOptions = {
   childId: string;
   autoStart: boolean;
+  audioContext?: AudioContext;
   onComplete: (metrics: SessionMetrics) => void;
   onError: () => void;
 };
@@ -31,7 +33,7 @@ export type MountLanternWatch = (el: HTMLElement, opts: MountOptions) => Promise
  * resolves, so nothing is uploaded. The play page already took the child's start tap, so the game starts by itself.
  */
 export function createSessionGame(loadMount: () => Promise<MountLanternWatch>): SessionGame {
-  return (el, childId, consent) => {
+  return (el, childId, consent, audioContext) => {
     void consent;
     let handle: Handle | undefined;
     let cancel: (() => void) | undefined;
@@ -54,6 +56,7 @@ export function createSessionGame(loadMount: () => Promise<MountLanternWatch>): 
         mount(el, {
           childId,
           autoStart: true,
+          audioContext,
           onComplete: (metrics) => {
             handle?.destroy();
             handle = undefined;

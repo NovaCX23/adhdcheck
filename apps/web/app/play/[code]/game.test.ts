@@ -71,6 +71,24 @@ describe("createSessionGame destroy (R3-L1)", () => {
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 
+  it("R4-7 never resolves a result that arrives after the page left (destroyed)", async () => {
+    const { mount, opts } = fakeMount();
+    const run = createSessionGame(async () => mount)(el(), CHILD, OFF);
+    await tick();
+    run.destroy();
+    opts().onComplete?.({ session_id: "late" } as unknown as SessionMetrics);
+    const outcome = await Promise.race([run.promise.then(() => "resolved"), new Promise((r) => setTimeout(() => r("pending"), 30))]);
+    expect(outcome).toBe("pending");
+  });
+
+  it("R4-7 gives the game the audio context created in the start tap, and no other", async () => {
+    const { mount } = fakeMount();
+    const ctx = { state: "running" } as unknown as AudioContext;
+    createSessionGame(async () => mount)(el(), CHILD, OFF, ctx);
+    await tick();
+    expect(mount.mock.calls[0]?.[1]).toMatchObject({ audioContext: ctx });
+  });
+
   it("asks the game to start by itself, so the child taps start once (the page's start button is the tap, R3-L7)", async () => {
     const { mount } = fakeMount();
     createSessionGame(async () => mount)(el(), CHILD, OFF);
