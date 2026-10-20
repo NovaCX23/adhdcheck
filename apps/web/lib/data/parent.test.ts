@@ -55,7 +55,17 @@ describe("validateNewChild (FR-31)", () => {
     [{ nickname: "Fox", birth_year: 2018.5 }],
     [{ nickname: "Fox", birth_year: "2018" }],
     [{ nickname: "Fox" }],
+    [{ nickname: "x".repeat(41), birth_year: 2018 }],
+    [{ nickname: "Fox", birth_year: 2012 }],
+    [{ nickname: "Fox", birth_year: 2021 }],
   ])("refuses %j", (input) => {
-    expect(validateNewChild(input)).toBeNull();
+    expect(validateNewChild(input, new Date("2026-10-20T12:00:00Z"))).toBeNull();
+  });
+
+  it("accepts the longest nickname and both ends of the birth-year range", () => {
+    const now = new Date("2026-10-20T12:00:00Z");
+    expect(validateNewChild({ nickname: "x".repeat(40), birth_year: 2018 }, now)).not.toBeNull();
+    expect(validateNewChild({ nickname: "Fox", birth_year: 2013 }, now)).not.toBeNull();
+    expect(validateNewChild({ nickname: "Fox", birth_year: 2020 }, now)).not.toBeNull();
   });
 });

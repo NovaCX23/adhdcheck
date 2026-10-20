@@ -62,12 +62,27 @@ export function toSessionResult(row: SessionRow): SessionResult {
   };
 }
 
+// The longest nickname; the database check (migration 20261021100000) uses the same number.
+// Placeholder: TODO texts owner confirms (docs/02 FR-31).
+export const MAX_NICKNAME_LENGTH = 40;
+
+// Intended use: children aged 6 to 12 (docs/02 section 2). With the birth year only, a child of 12 may
+// be born 13 years ago, so the accepted years run from 13 to 6 years before the current one.
+export function birthYearRange(now = new Date()) {
+  const year = now.getFullYear();
+  return { min: year - 13, max: year - 6 };
+}
+
 // FR-31: nickname and birth year only (NFR-01). Returns null when the input is not acceptable.
-export function validateNewChild(input: unknown): { nickname: string; birth_year: number } | null {
+export function validateNewChild(input: unknown, now = new Date()): { nickname: string; birth_year: number } | null {
   const { nickname, birth_year } = (input ?? {}) as { nickname?: unknown; birth_year?: unknown };
-  if (typeof nickname !== "string" || nickname.trim().length === 0) return null;
+  if (typeof nickname !== "string") return null;
+  const name = nickname.trim();
+  if (name.length === 0 || name.length > MAX_NICKNAME_LENGTH) return null;
   if (typeof birth_year !== "number" || !Number.isInteger(birth_year)) return null;
-  return { nickname: nickname.trim(), birth_year };
+  const { min, max } = birthYearRange(now);
+  if (birth_year < min || birth_year > max) return null;
+  return { nickname: name, birth_year };
 }
 
 export async function listChildren(client: SupabaseClient): Promise<Child[]> {
