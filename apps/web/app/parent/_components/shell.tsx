@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createLazyClient } from "@/lib/supabase/client";
+// Relative import: the tests render a card that uses this file, and Vitest has no "@/" alias.
+import { createLazyClient } from "../../../lib/supabase/client";
 import { S } from "../strings";
 
 // Parent pages run in the browser with the parent's own Supabase client (RLS returns only their rows).

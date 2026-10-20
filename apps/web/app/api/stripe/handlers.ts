@@ -1,9 +1,9 @@
 import type Stripe from "stripe";
 
 // Stripe test mode (FR-45 to FR-47; research/03 section 6). Stripe calls and the database are injected, so
-// these run in tests without network. Product and price are decision D-05: the price comes from
-// STRIPE_PRICE_ID, created in the Stripe test dashboard. Nothing here gates the result card, next step or
-// deletion (FR-48). Errors are logged by code only.
+// these run in tests without network. The subscription unlocks the report download only (D-05, FR-48);
+// product and price are decision D-05b: the price comes from STRIPE_PRICE_ID, created in the Stripe test
+// dashboard. Errors are logged by code only.
 
 function fail(status: number, error: string) {
   return Response.json({ error }, { status });
