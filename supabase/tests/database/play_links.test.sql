@@ -53,9 +53,9 @@ select is(
   (select public.issue_play_link('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000ca', old, now() - interval '1 second') from h),
   true, 'an already expired link can be stored (for the expiry test)'
 );
-select is((select public.resolve_play_link(a1) from h), '00000000-0000-0000-0000-0000000000ca'::uuid, 'a valid link resolves to its child');
-select is((select public.resolve_play_link(old) from h), null, 'an expired link resolves to nothing');
-select is((select public.resolve_play_link(a2) from h), null, 'an unknown link resolves to nothing');
+select is((select child_id from public.resolve_play_link((select a1 from h))), '00000000-0000-0000-0000-0000000000ca'::uuid, 'a valid link resolves to its child');
+select is_empty($$ select * from public.resolve_play_link((select old from h)) $$, 'an expired link resolves to nothing');
+select is_empty($$ select * from public.resolve_play_link((select a2 from h)) $$, 'an unknown link resolves to nothing');
 reset role;
 
 select results_eq($$ select count(*)::int from public.play_links where code_hash = (select other from h) $$, array[0], 'refused links are not stored');
@@ -68,7 +68,7 @@ select is(
 -- A used link resolves to nothing (save_session sets session_id; see save_session.test.sql).
 update public.play_links set session_id = '00000000-0000-0000-0000-00000000005a' where code_hash = (select a1 from h);
 set local role service_role; -- check-secrets: allow
-select is((select public.resolve_play_link(a1) from h), null, 'a used link resolves to nothing');
+select is_empty($$ select * from public.resolve_play_link((select a1 from h)) $$, 'a used link resolves to nothing');
 
 -- Rate limit: 3 per window, then refused; a new window starts over; keys are separate.
 select is(public.take_rate_limit('sessions:x', 3, 60), true, 'hit 1 of 3 allowed');

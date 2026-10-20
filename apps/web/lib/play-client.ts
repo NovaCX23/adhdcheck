@@ -25,11 +25,21 @@ async function errorCode(res: Response): Promise<string> {
   }
 }
 
-export async function resolvePlayLink(code: string, { fetchImpl = fetch }: Options = {}): Promise<{ child_id: string } | null> {
+// FR-70: the parent's camera and microphone choices for this link. Anything but an explicit true is off.
+export type Consent = { camera: boolean; microphone: boolean };
+
+export async function resolvePlayLink(
+  code: string,
+  { fetchImpl = fetch }: Options = {},
+): Promise<{ child_id: string; consent: Consent } | null> {
   const res = await fetchImpl(`/api/play-links/${encodeURIComponent(code)}`, { cache: "no-store" });
   if (!res.ok) return null;
-  const body = (await res.json()) as { child_id?: unknown };
-  return typeof body.child_id === "string" ? { child_id: body.child_id } : null;
+  const body = (await res.json()) as { child_id?: unknown; consent?: { camera?: unknown; microphone?: unknown } | null };
+  if (typeof body.child_id !== "string") return null;
+  return {
+    child_id: body.child_id,
+    consent: { camera: body.consent?.camera === true, microphone: body.consent?.microphone === true },
+  };
 }
 
 // FR-12: retries the exact same body after a network error, 429 or 5xx, waiting longer each time.
@@ -64,12 +74,16 @@ export async function uploadSession(
 // FR-32: for the parent's "start a session" page. Builds the URL the QR code encodes.
 export async function createPlayLink(
   childId: string,
-  { fetchImpl = fetch, origin = window.location.origin }: Options & { origin?: string } = {},
+  {
+    fetchImpl = fetch,
+    origin = window.location.origin,
+    consent = { camera: false, microphone: false },
+  }: Options & { origin?: string; consent?: Consent } = {},
 ): Promise<{ code: string; expires_at: string; url: string }> {
   const res = await fetchImpl("/api/play-links", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ child_id: childId }),
+    body: JSON.stringify({ child_id: childId, camera: consent.camera, microphone: consent.microphone }),
   });
   if (!res.ok) throw new Error(`create play link failed: ${await errorCode(res)}`);
   const { code, expires_at } = (await res.json()) as { code: string; expires_at: string };

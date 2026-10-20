@@ -13,11 +13,19 @@ function reply(status: number, body: unknown) {
 }
 
 describe("resolvePlayLink (FR-01)", () => {
-  it("answers the child_id of a valid link", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(reply(200, { child_id: "c1" }));
-    expect(await resolvePlayLink(CODE, { fetchImpl })).toEqual({ child_id: "c1" });
+  it("answers the child_id and the parent's camera and microphone choices (FR-70)", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(reply(200, { child_id: "c1", consent: { camera: false, microphone: true } }));
+    expect(await resolvePlayLink(CODE, { fetchImpl })).toEqual({ child_id: "c1", consent: { camera: false, microphone: true } });
     expect(fetchImpl).toHaveBeenCalledWith(`/api/play-links/${CODE}`, expect.objectContaining({ cache: "no-store" }));
   });
+
+  it.each([[undefined], [{}], [{ camera: "true", microphone: 1 }], [null]])(
+    "reads a missing or malformed choice (%j) as off, never on",
+    async (consent) => {
+      const fetchImpl = vi.fn().mockResolvedValue(reply(200, { child_id: "c1", consent }));
+      expect(await resolvePlayLink(CODE, { fetchImpl })).toEqual({ child_id: "c1", consent: { camera: false, microphone: false } });
+    },
+  );
 
   it("answers null for an unknown, expired or used link (the page shows 'ask your parent')", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(reply(404, { error: "invalid_play_link" }));
@@ -97,7 +105,13 @@ describe("createPlayLink (FR-32)", () => {
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe("/api/play-links");
     expect(init.headers["content-type"]).toBe("application/json");
-    expect(JSON.parse(init.body)).toEqual({ child_id: "c1" });
+    expect(JSON.parse(init.body)).toEqual({ child_id: "c1", camera: false, microphone: false });
+  });
+
+  it("sends the parent's camera and microphone choices (FR-70)", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(reply(201, { code: CODE, expires_at: "2026-10-20T11:00:00.000Z" }));
+    await createPlayLink("c1", { fetchImpl, origin: "https://example.test", consent: { camera: true, microphone: false } });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ child_id: "c1", camera: true, microphone: false });
   });
 
   it("throws with the error code when the link cannot be created", async () => {
