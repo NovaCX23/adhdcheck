@@ -42,6 +42,15 @@ export const S = {
     lastResult: "Last result",
     noResult: "No game played yet",
   },
+  // FR-50 weekly summary email, placeholder wording (TODO texts owner).
+  email: {
+    title: "Email summary",
+    hint: "Get a short email with a link back to this page. It never contains results.",
+    send: "Email me this week's summary",
+    sent: "Sent. Check your inbox.",
+    skipped: "Email is not set up yet.",
+    failed: "The email could not be sent.",
+  },
   demo: { label: "Demo account", reset: "Reset demo", resetting: "Resetting…", done: "Demo data restored." },
   billing: {
     unavailable: "Payment is not available right now. Please try again later.",

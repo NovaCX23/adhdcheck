@@ -15,6 +15,7 @@ import {
 import { BAND_TEXT, S } from "./strings";
 import { ErrorNote, Loading, Panel, Shell, buttonPrimary, buttonQuiet, field, postJson, useParent } from "./_components/shell";
 import { BandHeadline } from "./_components/BandHeadline";
+import { WeeklyEmail } from "./_components/WeeklyEmail";
 import { formatDate } from "./_components/ResultCard";
 
 type Row = Child & { last: { band: keyof typeof BAND_TEXT; at: string } | null };
@@ -111,6 +112,9 @@ export function ParentHome() {
               <DemoReset onDone={load} />
             </Panel>
           )}
+          <Panel title={S.email.title}>
+            <WeeklyEmail />
+          </Panel>
         </aside>
       </div>
     </Shell>
