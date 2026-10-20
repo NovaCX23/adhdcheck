@@ -73,7 +73,7 @@ describe("environment variables stay on the server (NFR-10, NFR-12)", () => {
     ]);
   });
 
-  it("allows NODE_ENV in a Client Component while a secret in the same file is still flagged", () => {
+  it("allows NODE_ENV in a Client Component while a secret in the same file is still flagged", () => { // check-secrets: allow
     const text = `"use client"; const dev = process.env.NODE_ENV; const k = process.env.STRIPE_SECRET_KEY;`; // check-secrets: allow
     expect(violations([{ path: "app/play/x/Client.tsx", text }])).toEqual([
       "app/play/x/Client.tsx: STRIPE_SECRET_KEY read outside server-only code", // check-secrets: allow
