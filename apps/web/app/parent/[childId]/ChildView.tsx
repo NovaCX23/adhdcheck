@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { listChildren, listMissions, listSessionResults, type Child, type MissionRow, type SessionResult } from "@/lib/data/parent";
 import { S } from "../strings";
@@ -20,7 +20,8 @@ export function ChildView({ childId }: { childId: string }) {
   const [results, setResults] = useState<SessionResult[]>([]);
   const [missions, setMissions] = useState<MissionRow[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "missing" | "failed">("loading");
-  const [shown, setShown] = useState<string | null>(null);
+  // ?session=<id>: the report email links to the session that was paid for (the page is read inside Suspense).
+  const [shown, setShown] = useState<string | null>(useSearchParams().get("session"));
 
   useEffect(() => {
     if (!ready) return;
@@ -56,7 +57,14 @@ export function ChildView({ childId }: { childId: string }) {
     return (
       <Shell>
         <BackLink />
-        <ErrorNote />
+        {state === "missing" ? (
+          // The header of the Shell carries the Log out action.
+          <p role="alert" className="rounded-xl bg-berry-soft px-4 py-3 text-ink">
+            {S.child.notFound}
+          </p>
+        ) : (
+          <ErrorNote />
+        )}
       </Shell>
     );
 

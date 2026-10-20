@@ -1,9 +1,9 @@
-// Stripe webhook (FR-47, D-05b). Logic and tests in ../handlers.ts. The raw body is read with
+// Stripe webhook (FR-47, D-05b, R3-D1). Logic and tests in ../handlers.ts. The raw body is read with
 // request.text() inside handleWebhook, before any parsing, as Stripe signature verification requires.
 import { Resend } from "resend";
 import { createStripeClient } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildPdfFor, getParentEmail, markEmailed, markNotPaid, markPaid, resendMailer } from "../billing";
+import { getParentEmail, markEmailed, markNotPaid, markPaid, reportTargetFor, resendMailer, startPurchase } from "../billing";
 import { resolveEmailFrom } from "@/lib/email/sender";
 import { handleWebhook } from "../handlers";
 
@@ -26,6 +26,7 @@ export async function POST(request: Request) {
   return handleWebhook(request, {
     verify: (payload, signature) => stripe.webhooks.constructEvent(payload, signature, signingValue),
     priceId: process.env.STRIPE_PRICE_ID,
+    siteUrl: process.env.SITE_URL,
     lineItemPrices: async (checkoutId) => {
       const items = await stripe.checkout.sessions.listLineItems(checkoutId, { limit: 10 });
       return items.data.map((i) => i.price?.id ?? "");
@@ -33,8 +34,9 @@ export async function POST(request: Request) {
     markNotPaid: (checkoutId, status) => markNotPaid(admin, checkoutId, status),
     markPaid: (input) => markPaid(admin, input),
     markEmailed: (checkoutId) => markEmailed(admin, checkoutId),
+    startPurchase: (input) => startPurchase(admin, input),
     getParentEmail: (parentId) => getParentEmail(admin, parentId),
-    buildPdf: (parentId, sessionId) => buildPdfFor(admin, parentId, sessionId),
+    reportTarget: (parentId, sessionId) => reportTargetFor(admin, parentId, sessionId),
     mailer,
   });
 }

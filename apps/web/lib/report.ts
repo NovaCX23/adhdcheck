@@ -5,7 +5,7 @@ import type { SessionResult } from "./data/parent";
 import { formatDate } from "./format";
 
 // Parent report (D-05 and D-05b, DECIDED, Hatem, 2026-10-20; FR-48). The only paid feature: 9.99 EUR,
-// one-off per report, emailed to the parent who paid and downloadable by that parent. It holds only
+// one-off per report, downloadable by the parent who paid, who is emailed a link to it (R3-D1). It holds only
 // what the result card already shows, with the same texts: nickname, session date, the fixed headline and
 // its supporting line, the fixed disclaimer, the game measures as game measures, and the next step. No
 // reason lines (placeholders), no probability, no severity, no diagnosis words (lib/report.test.ts).

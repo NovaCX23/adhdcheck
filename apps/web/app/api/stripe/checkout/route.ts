@@ -1,5 +1,5 @@
 // Start a Stripe Checkout one-off payment for one report (FR-45, D-05b). Logic and tests in ../handlers.ts.
-import { getReportPurchase, getSessionResult, listPendingCheckoutIds } from "@/lib/data/parent";
+import { getLatestClosedCheckoutId, getReportPurchase, getSessionResult, listPendingCheckoutIds } from "@/lib/data/parent";
 import { createStripeClient } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -27,6 +27,7 @@ export async function POST(request: Request) {
     },
     isPaid: async (sessionId) => (await getReportPurchase(supabase, sessionId))?.status === "paid",
     pendingCheckouts: (sessionId) => listPendingCheckoutIds(supabase, sessionId),
+    latestClosedCheckout: (sessionId) => getLatestClosedCheckoutId(supabase, sessionId),
     retrieveCheckout: async (checkoutId) => {
       try {
         const c = await stripe.checkout.sessions.retrieve(checkoutId);

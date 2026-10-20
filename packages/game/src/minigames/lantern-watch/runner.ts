@@ -27,6 +27,10 @@ export const PRACTICE_INTRO_MS = 2600;
 export const BLOCK_INTRO_MS = 2400;
 /** The break between blocks lasts at least this long; then a tap on the play button continues. */
 export const BREAK_MIN_MS = 4000;
+/** How long a phase change (end of a calibration round without a hit, end of the task) waits for a tap that was
+ * stamped inside the last trial's window but is delivered after the frame that closed it. TODO: design choice,
+ * no sourced value. */
+export const LATE_TAP_GRACE_MS = 100;
 /** Practice: two fireflies and two moths, fixed order and lanterns, task timing, never recorded. */
 export const PRACTICE: ReadonlyArray<{ type: "go" | "nogo"; lantern: number }> = [
   { type: "go", lantern: 1 },
@@ -102,9 +106,14 @@ export class LanternWatchRunner {
   private block = 0;
   private cur: ActiveTrial | null = null;
   // The last trial that closed without a response, kept open to events stamped inside its window but delivered
-  // after the frame that closed it (a busy main thread). patch() writes the response into its record and answers
-  // false when that record no longer exists (a calibration round that was thrown away).
-  private lastClosed: { trial: ActiveTrial; windowMs: number; patch(tMs: number, x: number, y: number): boolean } | null = null;
+  // after the frame that closed it (a busy main thread), in every state, because the frame that closes the last
+  // trial of a phase also changes the state. The response is written into arr[idx]; it is a no-op when that
+  // array no longer holds the record (a calibration round that was thrown away). It is dropped when an event
+  // stamped after its window arrives (events come in time order), and replaced by the next close.
+  private lastClosed: { trial: ActiveTrial; windowMs: number; arr: Trial[]; idx: number; build(prev: Trial, tMs: number, x: number, y: number): Trial } | null = null;
+  // End of the wait for a late tap: at the end of a calibration round without a hit, and at the end of the task.
+  private settleUntil: number | null = null;
+  private finishAt: number | null = null;
 
   constructor(cfg: RunnerConfig, hooks: RunnerHooks = {}) {
     this.task = cfg.task;
@@ -134,7 +143,26 @@ export class LanternWatchRunner {
     return this.state === "trials";
   }
 
+  // A tap stamped inside the window of the trial that just closed is that trial's response.
+  private lateResponse(tMs: number, x: number, y: number, lantern: number | null): boolean {
+    const late = this.lastClosed;
+    if (!late) return false;
+    const onset = late.trial.onset as number;
+    if (tMs >= onset + late.windowMs) {
+      this.lastClosed = null; // time order: nothing stamped inside that window can still arrive
+      return false;
+    }
+    const c = this.cur;
+    if (lantern !== late.trial.lantern || tMs < onset || (c && c.onset !== null && tMs >= c.onset)) return false;
+    const live = (late.arr === this.records || late.arr === this.calibRecords) && late.arr[late.idx] !== undefined;
+    this.lastClosed = null;
+    if (!live) return false;
+    late.arr[late.idx] = late.build(late.arr[late.idx] as Trial, tMs, x, y);
+    return true;
+  }
+
   pointerDown(tMs: number, x: number, y: number, lantern: number | null): TapKind {
+    if (this.lateResponse(tMs, x, y, lantern)) return "response";
     switch (this.state) {
       case "intro":
         if (this.startRequested) return "ignored";
@@ -149,19 +177,6 @@ export class LanternWatchRunner {
       case "practice":
       case "trials": {
         const c = this.cur;
-        const late = this.lastClosed;
-        if (
-          late &&
-          lantern === late.trial.lantern &&
-          late.trial.onset !== null &&
-          tMs >= late.trial.onset &&
-          tMs < late.trial.onset + late.windowMs &&
-          (!c || c.onset === null || tMs < c.onset)
-        ) {
-          const patched = late.patch(tMs, x, y);
-          this.lastClosed = null;
-          if (patched) return "response";
-        }
         if (c && c.onset !== null && tMs >= c.onset && !c.responded && lantern === c.lantern) {
           const window = c.type === "calibration" ? RESPONSE_WINDOW_MS : this.task.stimulusMs + c.isiMs;
           const inWindow = tMs < c.onset + window;
@@ -257,27 +272,47 @@ export class LanternWatchRunner {
         this.nextCalibration(ts);
         return;
       }
-      if (!this.calibRecords.some((t) => t.outcome === "hit")) {
-        // No firefly tapped at all: the contract cannot carry a calibration without a median (#27 returns null),
-        // so the round is run again and only the new round is recorded. TODO team: design choice.
-        this.calibRecords = [];
-        this.lastClosed = null; // a late tap of the discarded round must not reach the new one
-        this.setState("calib", ts);
-        this.nextCalibration(ts);
+      // No hit yet, but the last trial may still receive a late tap that makes one: wait for it.
+      if (!this.calibRecords.some((t) => t.outcome === "hit") && this.lastClosed?.arr === this.calibRecords) {
+        this.settleUntil = ts + LATE_TAP_GRACE_MS;
         return;
       }
-      this.records.push(...this.calibRecords.map((t, i) => ({ ...t, i })));
-      this.lastClosed = null; // the calibration records were copied; the task trials start from a clean slate
-      this.setState("practice-intro", ts);
+      this.finishCalibrationRound(ts);
       return;
     }
     this.cur = this.makeTrial(practice ? "practice" : "calibration", "calibration", 0, c.lantern, c.waitMs, this.idx);
     this.since = ts; // start of the dark wait
   }
 
+  private finishCalibrationRound(ts: number) {
+    if (!this.calibRecords.some((t) => t.outcome === "hit")) {
+      // No firefly tapped at all: the contract cannot carry a calibration without a median (#27 returns null),
+      // so the round is run again and only the new round is recorded. TODO team: design choice.
+      this.calibRecords = [];
+      this.lastClosed = null; // a late tap of the discarded round must not reach the new one
+      this.setState("calib", ts);
+      this.nextCalibration(ts);
+      return;
+    }
+    const base = this.records.length;
+    this.records.push(...this.calibRecords.map((t, i) => ({ ...t, i: base + i })));
+    // A late tap for the last calibration trial now lands in the copy, not in the round it was copied from.
+    if (this.lastClosed?.arr === this.calibRecords) {
+      this.lastClosed.arr = this.records;
+      this.lastClosed.idx += base;
+    }
+    this.setState("practice-intro", ts);
+  }
+
   private frameCalibration(ts: number) {
     const c = this.cur;
-    if (!c) return;
+    if (!c) {
+      if (this.settleUntil !== null && ts >= this.settleUntil) {
+        this.settleUntil = null;
+        this.finishCalibrationRound(ts);
+      }
+      return;
+    }
     if (c.onset === null) {
       if (ts - this.since >= c.isiMs) this.show(c, ts);
       return;
@@ -289,18 +324,9 @@ export class LanternWatchRunner {
         const build = (tapMs: number | null, x: number, y: number) =>
           toContractTrial({ i: at, onsetMs: c.onset as number, tapMs, x, y }, this.t0, RESPONSE_WINDOW_MS);
         this.calibRecords.push(build(c.responded ? (c.onset as number) + (c.rtMs as number) : null, c.x, c.y));
-        const round = this.calibRecords; // the array this record lives in
         this.lastClosed = c.responded
           ? null
-          : {
-              trial: c,
-              windowMs: RESPONSE_WINDOW_MS,
-              patch: (tMs, x, y) => {
-                if (this.calibRecords !== round || round[at] === undefined) return false; // that round was discarded
-                round[at] = build(tMs, x, y);
-                return true;
-              },
-            };
+          : { trial: c, windowMs: RESPONSE_WINDOW_MS, arr: this.calibRecords, idx: at, build: (_prev, tMs, x, y) => build(tMs, x, y) };
       } else this.lastClosed = null;
       this.nextCalibration(ts);
     }
@@ -331,14 +357,10 @@ export class LanternWatchRunner {
         this.breakReady = false;
         this.continueRequested = false;
         this.setState("break", ts);
+      } else if (this.lastClosed) {
+        this.finishAt = ts + LATE_TAP_GRACE_MS; // the last trial may still receive a late tap
       } else {
-        this.setState("done", ts);
-        this.hooks.onComplete?.({
-          trials: this.records,
-          off_target_taps: this.offTarget,
-          duration_ms: ts - this.t0,
-          t0: this.t0,
-        });
+        this.complete(ts);
       }
       return;
     }
@@ -346,8 +368,24 @@ export class LanternWatchRunner {
     this.show(this.cur, ts);
   }
 
+  private complete(ts: number) {
+    this.lastClosed = null; // the records are handed over below; nothing may rewrite them afterwards
+    this.setState("done", ts);
+    this.hooks.onComplete?.({
+      trials: this.records,
+      off_target_taps: this.offTarget,
+      duration_ms: ts - this.t0,
+      t0: this.t0,
+    });
+  }
+
   private frameTimed(ts: number) {
     const c = this.cur;
+    if (!c && this.finishAt !== null && ts >= this.finishAt) {
+      this.finishAt = null;
+      this.complete(ts);
+      return;
+    }
     if (!c || c.onset === null) return;
     if (c.hiddenAt === null && ts - c.onset >= this.task.stimulusMs) this.hide(c, ts);
     if (ts - c.onset >= this.task.stimulusMs + c.isiMs) {
@@ -379,18 +417,11 @@ export class LanternWatchRunner {
       : {
           trial: c,
           windowMs: this.task.stimulusMs + c.isiMs,
-          patch: (tMs, x, y) => {
-            if (this.records[at] === undefined) return false;
+          arr: this.records,
+          idx: at,
+          build: (prev, tMs, x, y) => {
             const rt = tMs - onset;
-            this.records[at] = {
-              ...(this.records[at] as Trial),
-              responded: true,
-              rt_ms: rt,
-              outcome: classify(c.type, true, rt, this.anticipationMs),
-              x,
-              y,
-            };
-            return true;
+            return { ...prev, responded: true, rt_ms: rt, outcome: classify(c.type, true, rt, this.anticipationMs), x, y };
           },
         };
     this.records.push({

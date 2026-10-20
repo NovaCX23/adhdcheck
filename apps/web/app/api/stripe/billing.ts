@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Resend } from "resend";
-import { buildReport, renderReportPdf } from "../../../lib/report";
-import type { EmailLang } from "../../../lib/report-email";
+import type { EmailLang } from "../../../lib/email/messages";
 import { SESSION_COLUMNS, toSessionResult } from "../../../lib/data/parent";
 import type { Mailer, PaidOutcome } from "./handlers";
 
@@ -60,9 +59,10 @@ export async function getParentEmail(admin: SupabaseClient, parentId: string): P
   return data.user.email ?? null;
 }
 
-// The PDF of one session of one parent. The service role bypasses RLS, so every read is filtered on the
-// parent id as well as the session id.
-export async function buildPdfFor(admin: SupabaseClient, parentId: string, sessionId: string) {
+// Where the paid report of one session of one parent is downloaded: the child page. The service role bypasses
+// RLS, so every read is filtered on the parent id as well as the session id. Only ids and the band are returned
+// (R3-D1: no child data goes into an email, so no nickname is read here).
+export async function reportTargetFor(admin: SupabaseClient, parentId: string, sessionId: string): Promise<{ childId: string; band: string } | null> {
   const { data: row, error } = await admin
     .from("sessions")
     .select(SESSION_COLUMNS)
@@ -72,17 +72,8 @@ export async function buildPdfFor(admin: SupabaseClient, parentId: string, sessi
   if (error) throw new Error(`read session failed: ${error.message}`);
   if (!row) return null;
   const result = toSessionResult(row as unknown as Parameters<typeof toSessionResult>[0]);
-  const { data: child, error: childError } = await admin
-    .from("children")
-    .select("nickname")
-    .eq("id", result.child_id)
-    .eq("parent_id", parentId)
-    .maybeSingle();
-  if (childError) throw new Error(`read child failed: ${childError.message}`);
-  if (!child) return null;
-  const model = buildReport(result, child.nickname as string);
-  if (!model || !result.score) return null;
-  return { bytes: await renderReportPdf(model), fileName: model.fileName, band: result.score.band, sessionDate: result.started_at };
+  if (!result.score) return null;
+  return { childId: result.child_id, band: result.score.band };
 }
 
 // Resend: { data, error } on an API answer; a thrown error is a network failure. 4xx except 429 is
@@ -99,7 +90,6 @@ export function resendMailer(resend: Resend, from: string): Mailer {
             subject: mail.subject,
             text: mail.text,
             html: mail.html,
-            attachments: [{ filename: mail.attachment.filename, content: Buffer.from(mail.attachment.content) }],
           },
           { idempotencyKey: mail.idempotencyKey },
         );

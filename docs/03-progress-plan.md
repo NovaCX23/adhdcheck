@@ -118,7 +118,7 @@ From 03 section 9; timing TODO (03 suggests about 3 minutes for the live flow).
 - [ ] Show the headline wording and the disclaimer; point out that no probability or severity is shown (FR-34, NFR-53).
 - [ ] Open the next-step page and the clinician summary (FR-35).
 - [ ] Show the 4-week progress chart and parent-chosen missions (FR-37, FR-38).
-- [ ] Buy one report with Stripe test checkout and show the email with the PDF attached (FR-45, FR-47, FR-51).
+- [ ] Buy one report with Stripe test checkout and show the email with the link to the report behind login (FR-45, FR-47, FR-51; the PDF is not attached, R3-D1).
 - [ ] Show the email that arrived, with no result data in it (FR-50).
 - [ ] Timing slide: "we measure variability, not absolute speed" (03 section 9 item 5).
 - [ ] Regulatory slide: intended purpose (DRAFT), expected class IIa, design constraints, validation plan (02 section 2).

@@ -1,11 +1,12 @@
 import type Stripe from "stripe";
 import { z } from "zod";
-import { buildReportEmail, type EmailLang, type ReportBand } from "../../../lib/report-email";
+import { reportReadyEmail, type EmailLang } from "../../../lib/email/messages";
 import { isUuid } from "../../../lib/uuid";
 
 // Stripe test mode (FR-45, FR-47; D-05, D-05b DECIDED, Hatem, 2026-10-20). The detailed PDF report costs
 // 9.99 EUR, paid once per report (Stripe Checkout, mode "payment"); the price comes from STRIPE_PRICE_ID.
-// After payment the report is emailed to the parent who paid (Resend) and stays downloadable by that parent.
+// After payment the parent who paid gets an email (Resend) with a link to the report behind login (R3-D1,
+// DECIDED, Hatem, 2026-10-20: no attachment, no child data in the email); the report stays downloadable in the app.
 // Stripe, Resend and the database are injected, so these run in tests without network. Errors and outcomes
 // are logged by code only, never with an email address.
 //
@@ -46,6 +47,9 @@ export type CheckoutDeps = {
   isPaid(sessionId: string): Promise<boolean>;
   // Stripe Checkout Session ids of this parent's pending purchases of this report, newest first (RLS).
   pendingCheckouts(sessionId: string): Promise<string[]>;
+  // The Stripe Checkout Session id of this parent's newest failed or expired purchase of this report, or null.
+  // It goes into the idempotency key (R5-3), so a new checkout after a failure is never answered with the dead one.
+  latestClosedCheckout(sessionId: string): Promise<string | null>;
   // What Stripe says an earlier Checkout Session became; null when Stripe does not know it.
   retrieveCheckout(checkoutId: string): Promise<{ status: "open" | "complete" | "expired"; paymentStatus: string; url: string | null } | null>;
   createCheckoutSession(input: {
@@ -110,6 +114,13 @@ export async function handleCheckout(request: Request, deps: CheckoutDeps): Prom
   if (existingUrl) return Response.json({ url: existingUrl });
 
   const lang = langFromRequest(request);
+  let closedId: string | null;
+  try {
+    closedId = await deps.latestClosedCheckout(sessionId);
+  } catch {
+    console.error("[stripe] checkout failed", { error: "storage_unavailable" });
+    return fail(503, "storage_unavailable");
+  }
   try {
     const session = await deps.createCheckoutSession({
       priceId: deps.priceId,
@@ -118,7 +129,7 @@ export async function handleCheckout(request: Request, deps: CheckoutDeps): Prom
       lang,
       successUrl: `${siteUrl}/parent/${own.childId}?report=paid`,
       cancelUrl: `${siteUrl}/parent/${own.childId}`,
-      idempotencyKey: `report-checkout/${parentId}/${sessionId}/${Math.floor(Date.now() / CHECKOUT_BUCKET_MS)}`,
+      idempotencyKey: `report-checkout/${parentId}/${sessionId}/${Math.floor(Date.now() / CHECKOUT_BUCKET_MS)}/${closedId ?? "none"}`,
     });
     if (!session.url) throw new Error("checkout session without url");
     // The webhook also records the purchase from the metadata, so a lost insert here loses nothing.
@@ -137,7 +148,6 @@ export type ReportMail = {
   subject: string;
   text: string;
   html: string;
-  attachment: { filename: string; content: Uint8Array };
   idempotencyKey: string;
 };
 // permanent: the provider refused the message for good (for example a 403 because the sender domain is not
@@ -159,10 +169,15 @@ export type WebhookDeps = {
   markNotPaid(checkoutId: string, status: "failed" | "expired"): Promise<void>;
   markPaid(input: { checkoutId: string; parentId: string; sessionId: string; lang: EmailLang }): Promise<PaidOutcome>;
   markEmailed(checkoutId: string): Promise<void>;
+  // Records a pending purchase from the Checkout metadata (R5-4); the same database call as at checkout start.
+  startPurchase(input: { parentId: string; sessionId: string; checkoutId: string; lang: EmailLang }): Promise<string>;
+  // SITE_URL: the public address of the site, the only source of the link in the email.
+  siteUrl: string | undefined;
   // The email of the parent who paid, from Supabase auth (never from the request or Stripe).
   getParentEmail(parentId: string): Promise<string | null>;
-  // The report PDF of that parent's session, or null when it cannot be built (not scored, deleted).
-  buildPdf(parentId: string, sessionId: string): Promise<{ bytes: Uint8Array; fileName: string; band: ReportBand | "insufficient_data"; sessionDate: string } | null>;
+  // The child page of that parent's session where the report is downloaded, or null when there is none (not
+  // scored, deleted). Only ids and the band leave this function; the band decides whether a report exists.
+  reportTarget(parentId: string, sessionId: string): Promise<{ childId: string; band: string } | null>;
   // null when RESEND_API_KEY or EMAIL_FROM is not set: the purchase is still recorded.
   mailer: Mailer | null;
 };
@@ -182,7 +197,7 @@ function note(outcome: string) {
 }
 
 // POST /api/stripe/webhook (FR-47): verifies the signature on the raw body, marks the purchase paid once,
-// then emails the report once. A 500 makes Stripe retry (database or temporary email failure); a permanent
+// then emails the link to the report once. A 500 makes Stripe retry (database or temporary email failure); a permanent
 // condition answers 200 with a logged code, so Stripe does not retry it for days.
 export async function handleWebhook(request: Request, deps: WebhookDeps): Promise<Response> {
   const signature = request.headers.get("stripe-signature");
@@ -202,6 +217,12 @@ export async function handleWebhook(request: Request, deps: WebhookDeps): Promis
     const closed = event.data.object as Stripe.Checkout.Session;
     if (closed.mode !== "payment") return Response.json({ received: true });
     try {
+      // R6-6: the row written at checkout start can be missing. Record it from the metadata first (an existing
+      // row is kept), so this event closes it and a later "completed, unpaid" event cannot open a pending one.
+      const known = Metadata.safeParse(closed.metadata ?? {});
+      if (known.success) {
+        await deps.startPurchase({ parentId: known.data.parent_id, sessionId: known.data.session_id, checkoutId: closed.id, lang: known.data.lang });
+      }
       await deps.markNotPaid(closed.id, notPaid);
     } catch {
       console.error("[stripe] webhook failed", { error: "storage_unavailable" });
@@ -215,6 +236,20 @@ export async function handleWebhook(request: Request, deps: WebhookDeps): Promis
   if (checkout.mode !== "payment") return Response.json({ received: true });
   // A delayed payment method completes the checkout before the money arrives (unpaid; async_payment_succeeded
   // follows). Only "paid" counts: "no_payment_required" (a 100% coupon) is not a purchase of this report.
+  if (checkout.payment_status === "unpaid" && event.type === "checkout.session.completed") {
+    // R5-4: the pending row is written at checkout start and that insert is only logged when it fails; write it
+    // again from the metadata, so the parent cannot start a second payment while the bank is still working.
+    const pending = Metadata.safeParse(checkout.metadata ?? {});
+    if (pending.success) {
+      try {
+        await deps.startPurchase({ parentId: pending.data.parent_id, sessionId: pending.data.session_id, checkoutId: checkout.id, lang: pending.data.lang });
+      } catch {
+        console.error("[stripe] webhook failed", { error: "storage_unavailable" });
+        return fail(500, "storage_unavailable");
+      }
+    }
+    return Response.json({ received: true });
+  }
   if (checkout.payment_status !== "paid") return Response.json({ received: true });
   const meta = Metadata.safeParse(checkout.metadata ?? {});
   if (!meta.success) return note("bad_metadata");
@@ -248,17 +283,15 @@ export async function handleWebhook(request: Request, deps: WebhookDeps): Promis
   try {
     const to = await deps.getParentEmail(parentId);
     if (!to) return note("no_parent_email");
-    const pdf = await deps.buildPdf(parentId, sessionId);
-    if (!pdf) return note("report_unavailable");
-    // Cannot be bought any more; a purchase made before that rule has a report but no email text.
-    if (pdf.band === "insufficient_data") return note("insufficient_data");
-    const content = buildReportEmail({ lang, band: pdf.band, sessionDate: pdf.sessionDate });
-    const sent = await deps.mailer.send({
-      to,
-      ...content,
-      attachment: { filename: pdf.fileName, content: pdf.bytes },
-      idempotencyKey: `report-email/${checkout.id}`,
-    });
+    const siteUrl = deps.siteUrl?.trim().replace(/\/+$/, "");
+    if (!siteUrl) return note("site_url_not_configured");
+    const target = await deps.reportTarget(parentId, sessionId);
+    if (!target) return note("report_unavailable");
+    // Cannot be bought any more; a purchase made before that rule has no report to link to.
+    if (target.band === "insufficient_data") return note("insufficient_data");
+    // The link opens the child page behind login; a visitor without a session is sent to /login and comes back.
+    const content = reportReadyEmail(lang, `${siteUrl}/parent/${target.childId}?session=${sessionId}`);
+    const sent = await deps.mailer.send({ to, ...content, idempotencyKey: `report-email/${checkout.id}` });
     if (!sent.ok) {
       if (sent.permanent) return note("email_rejected");
       throw new Error("email temporarily unavailable");

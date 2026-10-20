@@ -4,7 +4,8 @@
 // condition. landing-copy.test.ts enforces this on every string below and on the rendered page.
 // Product facts used here, decided by the owner (2026-10-20): 10–\u206015 minute 3D game with Luma, the headline
 // and next step always free (decision A), only the PDF report is paid (D-05): 9.99 EUR, one-off per report,
-// sent by email to the parent who paid (docs/02 D-05b, DECIDED, Hatem, 2026-10-20). Pilot, not CE marked.
+// reached through a link emailed to the parent who paid, behind login (docs/02 D-05b and R3-D1, DECIDED, Hatem,
+// 2026-10-20). Pilot, not CE marked. TODO (texts owner): approve the two FAQ answers on the report that say a link is emailed.
 // "10–\u206015": a word joiner keeps the range on one line.
 // Retention period is still open (docs/02 D-09), so the FAQ says so instead of giving a number.
 
@@ -168,7 +169,7 @@ const ro = {
       },
       {
         q: "Ce primesc pentru 9,99 EUR?",
-        a: "Un raport PDF detaliat pentru acea sesiune, plătit o singură dată și trimis pe e-mailul tău. Fără abonament, nimic nu se reînnoiește. Rezultatul și pasul următor rămân gratuite, fie că îl cumperi, fie că nu.",
+        a: "Un raport PDF detaliat pentru acea sesiune, plătit o singură dată; după plată primești pe e-mail un link către raport, în spațiul tău de părinte. Fără abonament, nimic nu se reînnoiește. Rezultatul și pasul următor rămân gratuite, fie că îl cumperi, fie că nu.",
       },
       {
         q: "Copilul ia deja medicamente. Mai are sens?",
@@ -357,7 +358,7 @@ const en: Dict = {
       },
       {
         q: "What do I get for 9.99 EUR?",
-        a: "One detailed PDF report for that session, paid once and sent to your email. No subscription, nothing renews. The result and the next step stay free whether you buy it or not.",
+        a: "One detailed PDF report for that session, paid once; after payment we email you a link to it in your parent area. No subscription, nothing renews. The result and the next step stay free whether you buy it or not.",
       },
       {
         q: "My child already takes medication. Does it still make sense?",

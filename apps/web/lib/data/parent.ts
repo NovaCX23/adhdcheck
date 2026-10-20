@@ -171,6 +171,19 @@ export async function listPendingCheckoutIds(client: SupabaseClient, sessionId: 
   return check<{ stripe_checkout_session_id: string }[]>(result, "list pending checkouts").map((r) => r.stripe_checkout_session_id);
 }
 
+// R5-3: the Stripe Checkout Session id of this parent's newest failed or expired purchase of one report, or null.
+// RLS: own rows only. It goes into the checkout idempotency key, so a new checkout after a failure is new to Stripe.
+export async function getLatestClosedCheckoutId(client: SupabaseClient, sessionId: string): Promise<string | null> {
+  const result = await client
+    .from("report_purchases")
+    .select("stripe_checkout_session_id")
+    .eq("session_id", sessionId)
+    .in("status", ["failed", "expired"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+  return check<{ stripe_checkout_session_id: string }[]>(result, "latest closed checkout")[0]?.stripe_checkout_session_id ?? null;
+}
+
 // FR-37: missions are always chosen by the parent; nothing here reads a score (NFR-52).
 export async function listMissions(client: SupabaseClient, childId: string): Promise<MissionRow[]> {
   const result = await client.from("missions").select(MISSION_COLUMNS).eq("child_id", childId).order("created_at");

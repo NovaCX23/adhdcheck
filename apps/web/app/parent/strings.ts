@@ -56,7 +56,8 @@ export const S = {
     unavailable: "Payment is not available right now. Please try again later.",
   },
   // D-05 and D-05b (DECIDED, Hatem, 2026-10-20): only the detailed report is paid, 9.99 EUR, one-off per
-  // report, emailed to the parent who paid. offerTitle and sentAndHere are the owner's words; the rest is
+  // report; the parent who paid gets an emailed link to it (R3-D1). offerTitle and sentAndHere are the owner's words;
+  // TODO (texts owner): sentAndHere says "Sent to your email" and now what is sent is a link, so confirm or reword; the rest is
   // placeholder wording for the texts owner (shared-texts-claims-pitch.md). offerText lists only what
   // lib/report.ts buildReport puts in the PDF.
   report: {
@@ -140,6 +141,8 @@ export const S = {
   },
   child: {
     back: "All children",
+    // R6-9: a link from the report email opened while logged in as another parent. TODO (texts owner): approve.
+    notFound: "This page is not available for the account you are logged in with. Use Log out, then log in with the account that bought the report.",
     history: "Earlier games",
     delete: "Delete child and all data",
     confirmDelete: "Delete this child and every game and mission? This cannot be undone.",

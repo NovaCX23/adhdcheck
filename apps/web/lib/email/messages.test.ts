@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { missionAddedEmail, waitlistEmail, weeklySummaryEmail } from "./messages";
+import { missionAddedEmail, reportReadyEmail, waitlistEmail, weeklySummaryEmail } from "./messages";
 
 const DASHBOARD = "https://app.example.test/parent";
 
@@ -8,10 +8,13 @@ const all = [
   waitlistEmail("ro"),
   missionAddedEmail(DASHBOARD),
   weeklySummaryEmail(DASHBOARD),
+  reportReadyEmail("en", DASHBOARD),
+  reportReadyEmail("ro", DASHBOARD),
 ];
 
-// Scope: the FR-50 messages (waitlist, new mission, weekly summary) only. The paid report email (FR-51)
-// deliberately carries the headline of its own report (lib/report-email.test.ts).
+// Scope: every email the app sends (waitlist, new mission, weekly summary and, since R3-D1, the paid report
+// email of FR-51). No email carries child data: the paid report stays in the app behind login and the email
+// only links to it.
 describe("FR-50 email messages", () => {
   it("never carry a result: no band, headline, indicator or score wording", () => {
     for (const m of all) {
@@ -29,10 +32,19 @@ describe("FR-50 email messages", () => {
   });
 
   it("the parent emails carry only the link to the dashboard", () => {
-    for (const m of [missionAddedEmail(DASHBOARD), weeklySummaryEmail(DASHBOARD)]) {
+    for (const m of [missionAddedEmail(DASHBOARD), weeklySummaryEmail(DASHBOARD), reportReadyEmail("en", DASHBOARD), reportReadyEmail("ro", DASHBOARD)]) {
       expect(m.text).toContain(DASHBOARD);
       expect(m.html).toContain(`href="${DASHBOARD}"`);
       expect(m.text.match(/https?:\/\/\S+/g)).toEqual([DASHBOARD]);
+    }
+  });
+
+  it("R3-D1 the report email follows the language and names no report content", () => {
+    expect(reportReadyEmail("ro", DASHBOARD).subject).not.toBe(reportReadyEmail("en", DASHBOARD).subject);
+    for (const m of [reportReadyEmail("en", DASHBOARD), reportReadyEmail("ro", DASHBOARD)]) {
+      expect(`${m.subject}
+${m.text}
+${m.html}`).not.toMatch(/adhd|pdf|attach|atașat|diagnostic|nickname/i);
     }
   });
 
