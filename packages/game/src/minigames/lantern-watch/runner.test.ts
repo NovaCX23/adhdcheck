@@ -441,6 +441,51 @@ describe("LanternWatchRunner, the task-end wait for a late tap (R6-2, R6-3)", ()
   });
 });
 
+describe("LanternWatchRunner, a stray tap in the wait after the last trial (R7-1)", () => {
+  const quietLast = (stray: boolean): Child => (tr, onset) => {
+    if (tr.type === "nogo") return [];
+    if (tr.phase === "task" && tr.taskIndex === LAST_INDEX) {
+      const window = DEFAULT_TASK.stimulusMs + tr.isiMs;
+      // lantern null: not the last trial's lantern, so it cannot be its late response; stamped after its window
+      return stray ? [{ t: onset + window + 30, lantern: null }] : [];
+    }
+    return [{ t: onset + 400, lantern: tr.lantern }];
+  };
+
+  it("R7-1 records no off-target tap and leaves the duration unchanged when the last trial is unanswered", () => {
+    const base = sim({ seed: GO_SEED, child: quietLast(false) });
+    const tapped = sim({ seed: GO_SEED, child: quietLast(true) });
+    expect(base.data.trials.at(-1)?.responded).toBe(false);
+    expect(tapped.data.off_target_taps).toHaveLength(base.data.off_target_taps.length);
+    expect(tapped.data.duration_ms).toBe(base.data.duration_ms);
+  });
+
+  it("R7-1b a real tap stamped inside the last window but delivered after it closed is still recorded", () => {
+    const late: Child = (tr, onset) => {
+      if (tr.type === "nogo") return [];
+      if (tr.phase === "task" && tr.taskIndex === LAST_INDEX) {
+        const window = DEFAULT_TASK.stimulusMs + tr.isiMs;
+        return [{ t: onset + window - 5, lantern: null, deliver: onset + window + FRAME * 1.5 }];
+      }
+      return [{ t: onset + 400, lantern: tr.lantern }];
+    };
+    const base = sim({ seed: GO_SEED, child: quietLast(false) });
+    const r = sim({ seed: GO_SEED, child: late });
+    expect(r.data.off_target_taps).toHaveLength(base.data.off_target_taps.length + 1);
+    expect(r.data.duration_ms).toBe(base.data.duration_ms);
+  });
+
+  it("R7-1 control: a tap in an ordinary ISI of the task is still recorded as off-target", () => {
+    const child: Child = (tr, onset) => {
+      const out: ReturnType<Child> = tr.type === "nogo" ? [] : [{ t: onset + 400, lantern: tr.lantern }];
+      if (tr.phase === "task" && tr.taskIndex === 3) out.push({ t: onset + DEFAULT_TASK.stimulusMs + 100, lantern: null });
+      return out;
+    };
+    const r = sim({ seed: GO_SEED, child });
+    expect(r.data.off_target_taps.filter((o) => o.during === "isi")).toHaveLength(1);
+  });
+});
+
 describe("LanternWatchRunner, guards on a late tap (R4-1, R6-4)", () => {
   const cal = (trials: Trial[]) => trials.filter((t) => t.type === "calibration");
 

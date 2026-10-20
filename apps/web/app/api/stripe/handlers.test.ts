@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SCORE_DISCLAIMER } from "@adhdcheck/contracts";
 import { BAND_TEXT } from "../../parent/strings";
 import {
+  checkoutIdempotencyKey,
   handleCheckout,
   handleWebhook,
   type CheckoutDeps,
@@ -95,7 +96,7 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
       lang: "en",
       successUrl: `https://site.example.test/parent/${CHILD}?report=paid`,
       cancelUrl: `https://site.example.test/parent/${CHILD}`,
-      idempotencyKey: expect.stringContaining(SESSION),
+      idempotencyKey: expect.any(String),
     });
     expect(startPurchase).toHaveBeenCalledWith({ parentId: PARENT, sessionId: SESSION, checkoutId: CHECKOUT, lang: "en" });
   });
@@ -229,8 +230,6 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
     for (const x of [before, afterFirst, afterSecond]) await handleCheckout(post("/api/stripe/checkout"), x.d);
     const keys = [before, afterFirst, afterSecond].map((x) => x.createCheckoutSession.mock.calls[0]![0].idempotencyKey);
     expect(new Set(keys).size).toBe(3);
-    expect(keys[1]).toContain("cs_expired_1");
-    expect(keys[1]).toContain(SESSION);
   });
 
   it("R5-3 still gives two tabs the same key while nothing new has closed", async () => {
@@ -239,6 +238,61 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
     await handleCheckout(post("/api/stripe/checkout"), a.d);
     await handleCheckout(post("/api/stripe/checkout"), b.d);
     expect(a.createCheckoutSession.mock.calls[0]![0].idempotencyKey).toBe(b.createCheckoutSession.mock.calls[0]![0].idempotencyKey);
+  });
+
+  // R7-3: Stripe answers an idempotency error (-> 502) when a key is reused with different parameters, and advises
+  // against personal identifiers in keys (https://docs.stripe.com/api/idempotent_requests,
+  // https://docs.stripe.com/error-low-level). The key is an opaque hash over every parameter sent to Stripe.
+  const keyOf = async (o: Parameters<typeof deps>[0], lang?: string) => {
+    const x = deps(o);
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (lang) headers["accept-language"] = lang;
+    await handleCheckout(post("/api/stripe/checkout", { sessionId: SESSION }, headers), x.d);
+    return x.createCheckoutSession.mock.calls[0]![0].idempotencyKey;
+  };
+
+  it("R7-3 gives the same parent and report another key when the language differs (same half hour)", async () => {
+    expect(await keyOf({}, "ro-RO,ro;q=0.9")).not.toBe(await keyOf({}, "en-US,en;q=0.9"));
+  });
+
+  it("R7-3 gives identical calls the same key, and another key for another site URL or price", async () => {
+    const base = await keyOf({}, "ro");
+    expect(await keyOf({}, "ro")).toBe(base);
+    expect(await keyOf({ siteUrl: "https://other.example.test" }, "ro")).not.toBe(base);
+    expect(await keyOf({ priceId: "price_other" }, "ro")).not.toBe(base);
+  });
+
+  it("R7-3 puts neither the parent id, nor the report id, nor an email in the key", async () => {
+    const key = await keyOf({ closed: "cs_expired_1" }, "ro");
+    for (const clear of [PARENT, SESSION, CHILD, PARENT_EMAIL, "example.test"]) expect(key).not.toContain(clear);
+    expect(key).toMatch(/^report-checkout\/[A-Za-z0-9/_-]+$/);
+    expect(key.length).toBeLessThanOrEqual(255);
+  });
+
+  // R7-5: every field of the hash must matter, so removing one from the hash fails a test.
+  it("R7-5 changes the key when any single input changes, and not otherwise", () => {
+    const base = { priceId: "p", parentId: "a", sessionId: "s", lang: "en" as const, successUrl: "u1", cancelUrl: "u2", bucket: 5, closedId: null as string | null };
+    const k = checkoutIdempotencyKey(base);
+    expect(checkoutIdempotencyKey({ ...base })).toBe(k);
+    const changed = [
+      { priceId: "p2" },
+      { parentId: "a2" },
+      { sessionId: "s2" },
+      { lang: "ro" as const },
+      { successUrl: "u1b" },
+      { cancelUrl: "u2b" },
+      { bucket: 6 },
+      { closedId: "cs_x" },
+    ];
+    for (const c of changed) expect(checkoutIdempotencyKey({ ...base, ...c }), JSON.stringify(c)).not.toBe(k);
+  });
+
+  it("R7-5 gives two reports of one child, same language, same half hour, different keys", async () => {
+    const a = deps();
+    const b = deps();
+    await handleCheckout(post("/api/stripe/checkout", { sessionId: SESSION }), a.d);
+    await handleCheckout(post("/api/stripe/checkout", { sessionId: "4f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b" }), b.d);
+    expect(a.createCheckoutSession.mock.calls[0]![0].idempotencyKey).not.toBe(b.createCheckoutSession.mock.calls[0]![0].idempotencyKey);
   });
 
   it("R5-3 answers 503 and opens no checkout when the closed checkouts cannot be read", async () => {
