@@ -36,7 +36,7 @@ describe(".env.example", () => {
   }
 
   it("finds the variables the code reads (the scan can see them)", () => {
-    expect(read.has("STRIPE_SECRET_KEY")).toBe(true);
+    expect(read.has("STRIPE_PRICE_ID")).toBe(true);
     expect(read.size).toBeGreaterThan(8);
   });
 
