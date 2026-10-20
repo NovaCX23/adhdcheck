@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MINIGAME_IDS, MiniGameEntrySchema, SessionMetricsSchema } from "./session-metrics";
+import { MAX_JSON_DEPTH, MINIGAME_IDS, MINIGAME_MAX_TRIALS, MiniGameEntrySchema, SessionMetricsSchema } from "./session-metrics";
 import { validSessionMetrics } from "./fixtures/session-metrics.valid";
 
 // PC-02 (docs/02 section 10.3, accepted by Hatem 2026-10-20): an optional `minigames` array on SessionMetrics,
@@ -55,5 +55,44 @@ describe("SessionMetrics.minigames (PC-02)", () => {
   it("does not add the other PC-02 blocks (motion, context): they stay rejected", () => {
     expect(SessionMetricsSchema.safeParse({ ...validSessionMetrics, motion: {} }).success).toBe(false);
     expect(SessionMetricsSchema.safeParse({ ...validSessionMetrics, context: {} }).success).toBe(false);
+  });
+});
+
+// I4: a hostile payload must be refused with a validation error, never crash the parser.
+function nested(depth: number): unknown {
+  let v: unknown = [];
+  for (let k = 1; k < depth; k++) v = [v];
+  return v;
+}
+
+describe("minigames: bounded depth (I4)", () => {
+  it("refuses a 5000 deep array in trials without throwing", () => {
+    const entry = { ...starPath, trials: [nested(5000)] };
+    let ok: boolean | undefined;
+    expect(() => (ok = SessionMetricsSchema.safeParse({ ...validSessionMetrics, minigames: [entry] }).success)).not.toThrow();
+    expect(ok).toBe(false);
+  });
+
+  it("accepts nesting up to the limit and refuses one level more", () => {
+    const at = { ...starPath, trials: [nested(MAX_JSON_DEPTH)] };
+    const over = { ...starPath, trials: [nested(MAX_JSON_DEPTH + 1)] };
+    expect(MiniGameEntrySchema.safeParse(at).success).toBe(true);
+    expect(MiniGameEntrySchema.safeParse(over).success).toBe(false);
+  });
+
+  it("a deep object in params or results is refused the same way", () => {
+    let o: unknown = {};
+    for (let k = 0; k < 5000; k++) o = { a: o };
+    expect(MiniGameEntrySchema.safeParse({ ...starPath, params: { o } }).success).toBe(false);
+    expect(MiniGameEntrySchema.safeParse({ ...starPath, results: { o } }).success).toBe(false);
+  });
+});
+
+describe("minigames: trials cap per game (M3)", () => {
+  it.each(MINIGAME_IDS)("%s: accepts as many trials as the game can play and refuses one more", (id) => {
+    const cap = MINIGAME_MAX_TRIALS[id];
+    const mk = (n: number) => ({ id, version: "0.1.0", params: {}, trials: Array.from({ length: n }, (_, i) => ({ i })) });
+    expect(MiniGameEntrySchema.safeParse(mk(cap)).success).toBe(true);
+    expect(SessionMetricsSchema.safeParse({ ...validSessionMetrics, minigames: [mk(cap + 1)] }).success).toBe(false);
   });
 });

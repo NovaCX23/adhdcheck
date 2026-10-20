@@ -1,7 +1,7 @@
 import type { SessionMetrics } from "@adhdcheck/contracts";
 import type { Consent } from "@/lib/play-client";
 import { mountWithFallback } from "../mountGuard";
-import { DEFAULT_STEPS, DEFAULT_TRANSITION_MS, browserDom, createSessionChain } from "./chain";
+import { DEFAULT_SKIP_HOLD_MS, DEFAULT_STEPS, DEFAULT_TRANSITION_MS, browserDom, createSessionChain } from "./chain";
 import { PLAY_STRINGS } from "./strings";
 
 // The game whose session is uploaded and scored: Lantern Watch, the go/no-go task (Person 1, FR-04 to
@@ -94,6 +94,7 @@ export const sessionGame: SessionGame | null = createSessionChain({
   lantern: lanternWatch,
   steps: DEFAULT_STEPS,
   transitionMs: DEFAULT_TRANSITION_MS,
+  skipHoldMs: DEFAULT_SKIP_HOLD_MS,
   wait: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
   dom: browserDom,
 });

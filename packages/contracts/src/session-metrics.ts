@@ -60,15 +60,58 @@ export const CalibrationSchema = z.strictObject({
 // `motion` and `context`, are NOT added: `context` needs the R5 privacy review first, and no motion is captured yet.
 export const MINIGAME_IDS = ["star-path", "bridge-wait", "treasure-choice", "route-planner"] as const;
 
+// Plain JSON with a bounded depth. zod's own z.json() recurses, so a payload nested a few thousand levels deep
+// (about 10 KB) overflows the stack and the upload route answered 500. This check walks the value with an explicit
+// stack, so the cost is the size of the body, which the route already limits. MAX_JSON_DEPTH is a safety bound, not a
+// measured value: the deepest result of a mini-game today is a puzzle record with its taps and cells, 4 levels.
+export const MAX_JSON_DEPTH = 8;
+
+type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
+
+function isBoundedJson(value: unknown): value is Json {
+  const stack: Array<[unknown, number]> = [[value, 1]];
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    const [v, depth] = top;
+    if (v === null || typeof v === "string" || typeof v === "boolean") continue;
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) return false;
+      continue;
+    }
+    if (typeof v !== "object" || depth > MAX_JSON_DEPTH) return false;
+    if (Array.isArray(v)) {
+      for (const item of v) stack.push([item, depth + 1]);
+      continue;
+    }
+    const proto: unknown = Object.getPrototypeOf(v);
+    if (proto !== Object.prototype && proto !== null) return false;
+    for (const item of Object.values(v)) stack.push([item, depth + 1]);
+  }
+  return true;
+}
+
+const BoundedJson = z.custom<Json>(isBoundedJson, { message: "bad_json" });
+
+// Most records a mini-game can put in `trials`, so an upload cannot carry more than the game can play. Each value is
+// what the game's own constants give (tied to them by packages/game/src/minigames/trial-caps.test.ts): Star Path
+// (N_STARS - START_LENGTH + 1) lengths times MAX_FAILURES_PER_LENGTH sequences, Bridge Wait N_TRIALS, Treasure Choice
+// N_CHOICES, Route Planner PUZZLES.length.
+export const MINIGAME_MAX_TRIALS = {
+  "star-path": 16,
+  "bridge-wait": 24,
+  "treasure-choice": 10,
+  "route-planner": 4,
+} as const satisfies Record<(typeof MINIGAME_IDS)[number], number>;
+
 export const MiniGameEntrySchema = z
   .strictObject({
     id: z.enum(MINIGAME_IDS),
     version: z.string(),
-    params: z.record(z.string(), z.json()),
-    trials: z.array(z.json()).optional(),
-    results: z.record(z.string(), z.json()).optional(),
+    params: z.record(z.string(), BoundedJson),
+    trials: z.array(BoundedJson).optional(),
+    results: z.record(z.string(), BoundedJson).optional(),
   })
-  .refine((e) => e.trials !== undefined || e.results !== undefined, { message: "trials_or_results_required" });
+  .refine((e) => e.trials !== undefined || e.results !== undefined, { message: "trials_or_results_required" })
+  .refine((e) => e.trials === undefined || e.trials.length <= MINIGAME_MAX_TRIALS[e.id], { message: "too_many_trials" });
 
 export const MiniGamesSchema = z
   .array(MiniGameEntrySchema)

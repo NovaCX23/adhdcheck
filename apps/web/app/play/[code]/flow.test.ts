@@ -135,3 +135,38 @@ describe("runPlayFlow, leaving the page (R3-L1)", () => {
     expect(calls.play).toBe(0);
   });
 });
+
+describe("runPlayFlow, link checked again at the start tap (M2)", () => {
+  it("shows the neutral invalid screen, plays nothing and uploads nothing when the link expired while the start screen waited", async () => {
+    let calls = 0;
+    const { deps, screens, calls: c } = setup({
+      resolve: async () => (++calls === 1 ? { child_id: CHILD, consent: OFF } : null),
+    });
+    await runPlayFlow("code-1", deps);
+    expect(calls).toBe(2);
+    expect(screens).toEqual(["checking", "ready", "invalid"]);
+    expect(c.play + c.upload).toBe(0);
+  });
+
+  it("plays as usual when the link is still good at the tap", async () => {
+    let calls = 0;
+    const { deps, screens } = setup({ resolve: async () => ({ child_id: CHILD, consent: OFF }) });
+    const resolve = deps.resolve;
+    deps.resolve = async (code) => (calls++, resolve(code));
+    await runPlayFlow("code-1", deps);
+    expect(calls).toBe(2);
+    expect(screens).toEqual(["checking", "ready", "playing", "saving", "done"]);
+  });
+
+  it("does not block a child whose network is down at the tap: the first answer stands", async () => {
+    let calls = 0;
+    const { deps, screens } = setup({
+      resolve: async () => {
+        if (++calls === 1) return { child_id: CHILD, consent: OFF };
+        throw new Error("offline");
+      },
+    });
+    await runPlayFlow("code-1", deps);
+    expect(screens).toEqual(["checking", "ready", "playing", "saving", "done"]);
+  });
+});

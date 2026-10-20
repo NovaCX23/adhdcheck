@@ -118,7 +118,15 @@ export async function handleSessionPost(
     return fail(400, "invalid_json");
   }
 
-  const parsed = UploadSchema.safeParse(body);
+  // The parse itself must never throw into a 500 (a hostile body is a 400): no field of the contract recurses
+  // without a bound, and anything unexpected is still answered as an invalid session.
+  let parsed: ReturnType<typeof UploadSchema.safeParse>;
+  try {
+    parsed = UploadSchema.safeParse(body);
+  } catch {
+    console.warn("[sessions] rejected", { error: "invalid_session", issues: 0 });
+    return fail(400, "invalid_session", { issues: [] });
+  }
   if (!parsed.success) {
     // Field paths and issue codes only: the values could hold anything the client sent.
     const issues = parsed.error.issues.map((i) => ({ path: i.path.join("."), code: issueCode(i) }));

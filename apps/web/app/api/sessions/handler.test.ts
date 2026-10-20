@@ -388,4 +388,28 @@ describe("POST /api/sessions with the PC-02 minigames field", () => {
     const { store } = memoryStore();
     expect((await post({ ...validSessionMetrics, minigames: entry }, store)).status).toBe(400);
   });
+
+  it("I4: answers 400, not 500, to a 5000 deep array in trials (no stack overflow in the parser)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { store, saved } = memoryStore();
+    // Built as text: JSON.stringify of a 5000 deep value overflows in the test itself.
+    const deep = "[".repeat(5000) + "]".repeat(5000);
+    const body = JSON.stringify({ ...validSessionMetrics, minigames: [{ ...entry, trials: ["__DEEP__"] }] }).replace('"__DEEP__"', deep);
+    const res = await post(body, store);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("invalid_session");
+    expect(saved.size).toBe(0);
+  });
+
+  it("M3: answers 400 to more trials than the game can play", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { store, saved } = memoryStore();
+    const trials = Array.from({ length: 100 }, (_, i) => ({ i }));
+    const res = await post({ ...validSessionMetrics, minigames: [{ ...entry, trials }] }, store);
+
+    expect(res.status).toBe(400);
+    expect(saved.size).toBe(0);
+  });
 });

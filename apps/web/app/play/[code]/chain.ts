@@ -15,16 +15,21 @@ import { transitionText } from "./strings";
 //   1. Lantern Watch, which starts with its calibration block "Wake the fireflies" (mini-game 0). The two are one
 //      continuous block for the child, as before, so they are one game here.
 //   2. Star Path   3. Bridge Wait   4. Treasure Choice   5. Route Planner (FR-64, optional in the docs, included).
-// The child sees "Game n of 5" between two games. Counting the calibration as a game of its own would give 6; the
+// The child sees "Game n of 5" before every game, the first one included. Counting the calibration as a game of its own would give 6; the
 // docs call it mini-game 0 and it has no screen of its own, so it is not counted (flagged in the PR).
 //
 // Only after the last game does the promise resolve, so the page uploads once (flow.ts). The upload is Lantern's
 // SessionMetrics, unchanged, plus `minigames` (PC-02) with the four results. A game that fails to start, throws or
-// returns something unusable is skipped and recorded, and the chain goes on. If Lantern Watch itself cannot start,
+// returns something unusable is skipped and recorded, and the chain goes on. A game that starts and never ends can
+// be skipped by an adult: a long press on a hidden corner control (see DEFAULT_SKIP_HOLD_MS), recorded as skipped.
+// There is no time limit per game. Lantern Watch cannot be skipped: the upload cannot be built without it. If Lantern Watch itself cannot start,
 // nothing can be scored: its calm fallback sentence stays on screen and nothing is uploaded, as before.
 
 // TODO (design choice, no source): how long the "Game n of 5" card stays before the next game starts.
 export const DEFAULT_TRANSITION_MS = 3000;
+
+// TODO (design choice, no source): how long an adult holds the hidden corner control to skip the running game.
+export const DEFAULT_SKIP_HOLD_MS = 3000;
 
 export type MiniGameResult = StarPathResult | BridgeWaitResult | TreasureChoiceResult | RoutePlannerResult;
 type Handle = { destroy(): void };
@@ -38,6 +43,8 @@ export type ChainStep = {
 export type ChainDom = {
   /** A fresh full-size box inside `el` for one game; remove() takes it out again. */
   slot(el: HTMLElement): { el: HTMLElement; remove(): void };
+  /** A hidden control in a corner of `el`: holding it for holdMs calls onSkip. For the adult, never the child. */
+  skip(el: HTMLElement, onSkip: () => void, holdMs: number): { remove(): void };
   /** The transition card "Game n of total". */
   card(el: HTMLElement, n: number, total: number): { remove(): void };
 };
@@ -46,6 +53,7 @@ export type ChainDeps = {
   lantern: SessionGame;
   steps: readonly ChainStep[];
   transitionMs: number;
+  skipHoldMs: number;
   wait(ms: number): Promise<void>;
   dom: ChainDom;
 };
@@ -60,10 +68,44 @@ export function toMiniGameEntry(r: MiniGameResult): MiniGameEntry {
   return MiniGameEntrySchema.parse(plain);
 }
 
-export type SkipReason = "mount_failed" | "result_invalid";
+export type SkipReason = "mount_failed" | "result_invalid" | "skipped_by_adult";
+
+/** Long press: down() arms a timer, up() (finger lifted, cancelled or left) disarms it, the timer calls onHold once. */
+export function createHoldDetector(
+  holdMs: number,
+  onHold: () => void,
+  setTimer: (fn: () => void, ms: number) => unknown = (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (id: unknown) => void = (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+) {
+  let id: unknown = null;
+  return {
+    down() {
+      if (id !== null) return;
+      id = setTimer(() => {
+        id = null;
+        onHold();
+      }, holdMs);
+    },
+    up() {
+      if (id === null) return;
+      clearTimer(id);
+      id = null;
+    },
+  };
+}
 
 function skippedEntry(id: MiniGameId, reason: SkipReason): MiniGameEntry {
   return { id, version: "none", params: {}, results: { status: "skipped", reason } };
+}
+
+// The card and the skip control are decoration and an adult's escape hatch: a DOM problem in them must never stop a game.
+const NOTHING = { remove() {} };
+function safely<T extends { remove(): void }>(make: () => T): T | typeof NOTHING {
+  try {
+    return make();
+  } catch {
+    return NOTHING;
+  }
 }
 
 export function createSessionChain(deps: ChainDeps): SessionGame {
@@ -74,6 +116,7 @@ export function createSessionChain(deps: ChainDeps): SessionGame {
     let current: Handle | undefined;
     let slot: { remove(): void } | undefined;
     let card: { remove(): void } | undefined;
+    let skipControl: { remove(): void } | undefined;
 
     const closeGame = () => {
       try {
@@ -82,6 +125,8 @@ export function createSessionChain(deps: ChainDeps): SessionGame {
         // a game that cannot be destroyed must not stop the chain
       }
       current = undefined;
+      skipControl?.remove();
+      skipControl = undefined;
       slot?.remove();
       slot = undefined;
     };
@@ -95,10 +140,11 @@ export function createSessionChain(deps: ChainDeps): SessionGame {
           closeGame();
           resolve(entry);
         };
-        const box = deps.dom.slot(el);
-        slot = box;
         let mounting: Promise<Handle>;
         try {
+          const box = deps.dom.slot(el);
+          slot = box;
+          skipControl = safely(() => deps.dom.skip(el, () => finish(skippedEntry(step.id, "skipped_by_adult")), deps.skipHoldMs));
           mounting = step.mount(box.el, (result) => {
             try {
               finish(toMiniGameEntry(result));
@@ -120,12 +166,17 @@ export function createSessionChain(deps: ChainDeps): SessionGame {
       });
 
     const run = async (): Promise<SessionMetrics | null> => {
+      card = safely(() => deps.dom.card(el, 1, total));
+      await deps.wait(deps.transitionMs);
+      card?.remove();
+      card = undefined;
+      if (destroyed) return null;
       lantern = deps.lantern(el, childId, consent, audioContext);
       const metrics = await lantern.promise; // never settles when Lantern Watch cannot start
       if (destroyed) return null;
       const entries: MiniGameEntry[] = [];
       for (const [k, step] of deps.steps.entries()) {
-        card = deps.dom.card(el, k + 2, total);
+        card = safely(() => deps.dom.card(el, k + 2, total));
         await deps.wait(deps.transitionMs);
         card?.remove();
         card = undefined;
@@ -170,6 +221,26 @@ export const browserDom: ChainDom = {
     box.style.cssText = "position:absolute;inset:0;width:100%;height:100%";
     el.appendChild(box);
     return { el: box, remove: () => box.remove() };
+  },
+  skip(el, onSkip, holdMs) {
+    // 56 px, above the game, invisible: an adult who knows it is there holds it. A child tapping the corner by chance
+    // does nothing (a short press is ignored), and holds are rare. TODO (Person 4): where it should sit.
+    const box = document.createElement("div");
+    box.setAttribute("aria-label", "Skip this game (hold)");
+    box.style.cssText = "position:absolute;top:0;right:0;width:56px;height:56px;z-index:10;touch-action:none;opacity:0";
+    const hold = createHoldDetector(holdMs, onSkip);
+    box.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      hold.down();
+    });
+    for (const type of ["pointerup", "pointercancel", "pointerleave"]) box.addEventListener(type, () => hold.up());
+    el.appendChild(box);
+    return {
+      remove: () => {
+        hold.up();
+        box.remove();
+      },
+    };
   },
   card(el, n, total) {
     const text = transitionText("en", n, total); // TODO (Person 4): language choice when the play page is translated

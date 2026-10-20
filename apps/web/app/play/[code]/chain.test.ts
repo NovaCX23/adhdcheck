@@ -4,7 +4,7 @@ import { validScoreResult } from "../../../../../packages/contracts/src/fixtures
 import { validSessionMetrics } from "../../../../../packages/contracts/src/fixtures/session-metrics.valid";
 import type { Consent, UploadResult } from "../../../lib/play-client";
 import { runPlayFlow } from "./flow";
-import { DEFAULT_TRANSITION_MS, createSessionChain, toMiniGameEntry, type ChainDeps, type ChainStep } from "./chain";
+import { DEFAULT_SKIP_HOLD_MS, DEFAULT_TRANSITION_MS, createHoldDetector, createSessionChain, toMiniGameEntry, type ChainDeps, type ChainStep } from "./chain";
 import type { SessionGame } from "./game";
 
 const CHILD = "7d9e0a1b-2c3d-4e5f-8a9b-0c1d2e3f4a5b";
@@ -27,10 +27,14 @@ type Harness = ReturnType<typeof harness>;
 function harness(opts: { failing?: Record<string, "reject" | "throw" | "bad-result"> } = {}) {
   const log: string[] = [];
   const completers: Record<string, (r: unknown) => void> = {};
+  const skips: Array<() => void> = [];
+  let pendingLantern: SessionMetrics | undefined;
   const waits: number[] = [];
   let releaseWait: () => void = () => {};
   let holdWait = false;
-  let lanternDone: (m: SessionMetrics) => void = () => {};
+  let lanternDone: (m: SessionMetrics) => void = (m) => {
+    pendingLantern = m; // Lantern Watch starts after its own card: remember a finish that comes early
+  };
   const lanternCalls: unknown[][] = [];
   const lantern: SessionGame = (el, childId, consent, audioContext) => {
     lanternCalls.push([childId, consent, audioContext]);
@@ -41,6 +45,7 @@ function harness(opts: { failing?: Record<string, "reject" | "throw" | "bad-resu
           log.push("lantern:done");
           resolve(m);
         };
+        if (pendingLantern) lanternDone(pendingLantern);
       }),
       destroy: () => log.push("lantern:destroy"),
     };
@@ -61,12 +66,18 @@ function harness(opts: { failing?: Record<string, "reject" | "throw" | "bad-resu
     lantern,
     steps,
     transitionMs: 1234,
+    skipHoldMs: 777,
     wait: (ms) => {
       waits.push(ms);
       log.push(`wait:${ms}`);
       return holdWait ? new Promise<void>((r) => (releaseWait = r)) : Promise.resolve();
     },
     dom: {
+      skip: (_el, onSkip, holdMs) => {
+        log.push(`skip:on:${holdMs}`);
+        skips.push(onSkip);
+        return { remove: () => log.push("skip:remove") };
+      },
       slot: () => ({ el: {} as HTMLElement, remove: () => log.push("slot:remove") }),
       card: (_el, n, total) => {
         log.push(`card:${n}/${total}`);
@@ -81,6 +92,9 @@ function harness(opts: { failing?: Record<string, "reject" | "throw" | "bad-resu
     lanternCalls,
     finishLantern: (m: SessionMetrics = lanternMetrics) => lanternDone(m),
     finish: (id: string, r: unknown = opts.failing?.[id] === "bad-result" ? { id, junk: true } : fakeResult(id)) => completers[id]?.(r),
+    skip: () => skips.at(-1)?.(),
+    skipAt: (i: number) => skips[i]?.(),
+    skipsShown: () => skips.length,
     hold: () => (holdWait = true),
     release: () => releaseWait(),
   };
@@ -108,10 +122,10 @@ describe("createSessionChain: the order and the count", () => {
     ]);
   });
 
-  it("shows 'game n of 5' before games 2 to 5 only, with no card after the last game", async () => {
+  it("shows 'game n of 5' before every game, Lantern Watch included, with no card after the last game", async () => {
     const h = harness();
     await playAll(h);
-    expect(h.log.filter((l) => l.startsWith("card:") && !l.startsWith("card:remove"))).toEqual(["card:2/5", "card:3/5", "card:4/5", "card:5/5"]);
+    expect(h.log.filter((l) => l.startsWith("card:") && !l.startsWith("card:remove"))).toEqual(["card:1/5", "card:2/5", "card:3/5", "card:4/5", "card:5/5"]);
   });
 
   it("advances by itself: a card, the wait, then the next game, with no call from the parent", async () => {
@@ -121,8 +135,9 @@ describe("createSessionChain: the order and the count", () => {
     await flush();
     const i = (s: string) => h.log.indexOf(s);
     expect(i("lantern:done")).toBeLessThan(i("card:2/5"));
-    expect(i("card:2/5")).toBeLessThan(i("wait:1234"));
-    expect(i("wait:1234")).toBeLessThan(i("card:remove:2"));
+    const w = h.log.indexOf("wait:1234", i("card:2/5"));
+    expect(i("card:2/5")).toBeLessThan(w);
+    expect(w).toBeLessThan(i("card:remove:2"));
     expect(i("card:remove:2")).toBeLessThan(i("mount:star-path"));
     h.finish("star-path");
     await flush();
@@ -135,6 +150,9 @@ describe("createSessionChain: the order and the count", () => {
     const h = harness();
     h.hold();
     createSessionChain(h.deps)({} as HTMLElement, CHILD, OFF);
+    await flush();
+    h.release(); // card 1 ends, Lantern Watch starts
+    await flush();
     h.finishLantern();
     await flush();
     expect(h.log).toContain("card:2/5");
@@ -148,10 +166,11 @@ describe("createSessionChain: the order and the count", () => {
     expect(DEFAULT_TRANSITION_MS).toBeGreaterThan(0);
   });
 
-  it("gives Lantern Watch the child, the consent and the unlocked audio context, as before", () => {
+  it("gives Lantern Watch the child, the consent and the unlocked audio context, as before", async () => {
     const h = harness();
     const ctx = { state: "running" } as unknown as AudioContext;
     createSessionChain(h.deps)({} as HTMLElement, CHILD, OFF, ctx);
+    await flush();
     expect(h.lanternCalls).toEqual([[CHILD, OFF, ctx]]);
   });
 });
@@ -284,6 +303,9 @@ describe("createSessionChain: leaving the page", () => {
     const run = createSessionChain(h.deps)({} as HTMLElement, CHILD, OFF);
     let settled = false;
     void run.promise.then(() => (settled = true));
+    await flush();
+    h.release();
+    await flush();
     h.finishLantern();
     await flush();
     run.destroy();
@@ -304,5 +326,117 @@ describe("createSessionChain: leaving the page", () => {
     await flush();
     expect(h.log.filter((l) => l === "destroy:star-path")).toHaveLength(1);
     expect(h.log).not.toContain("mount:bridge-wait");
+  });
+});
+
+describe("createSessionChain: the hidden grown-up skip (I3)", () => {
+  it("a game that mounts and never finishes can be skipped: the next game mounts and Lantern's data is still uploaded", async () => {
+    const h = harness();
+    const run = createSessionChain(h.deps)({} as HTMLElement, CHILD, OFF);
+    h.finishLantern();
+    await flush();
+    expect(h.log).toContain("mount:star-path"); // never finished by the child
+    h.skip();
+    await flush();
+    expect(h.log).toContain("destroy:star-path");
+    expect(h.log).toContain("mount:bridge-wait");
+    for (const id of ["bridge-wait", "treasure-choice", "route-planner"]) {
+      await flush();
+      h.finish(id);
+    }
+    const merged = await run.promise;
+    const { minigames, ...rest } = merged;
+    expect(rest).toEqual(lanternMetrics);
+    expect(minigames?.[0]).toMatchObject({ id: "star-path", results: { status: "skipped", reason: "skipped_by_adult" } });
+    expect(minigames?.map((m) => m.id)).toEqual(["star-path", "bridge-wait", "treasure-choice", "route-planner"]);
+    expect(SessionMetricsSchema.safeParse(merged).success).toBe(true);
+  });
+
+  it("a game stuck while mounting (its mount promise never settles) can be skipped too", async () => {
+    const h = harness();
+    const stuck: ChainStep = { id: "star-path", mount: () => new Promise(() => {}) };
+    const run = createSessionChain({ ...h.deps, steps: [stuck, ...h.deps.steps.slice(1)] })({} as HTMLElement, CHILD, OFF);
+    h.finishLantern();
+    await flush();
+    h.skip();
+    await flush();
+    expect(h.log).toContain("mount:bridge-wait");
+    run.destroy();
+  });
+
+  it("shows the control only while a mini-game runs, with the configured hold, never over Lantern Watch or a card", async () => {
+    const h = harness();
+    const run = createSessionChain(h.deps)({} as HTMLElement, CHILD, OFF);
+    await flush();
+    expect(h.skipsShown()).toBe(0); // card 1 and Lantern Watch: nothing to skip
+    h.finishLantern();
+    await flush();
+    expect(h.skipsShown()).toBe(1);
+    expect(h.log).toContain("skip:on:777");
+    h.finish("star-path");
+    await flush();
+    expect(h.log).toContain("skip:remove");
+    run.destroy();
+  });
+
+  it("the control of a game that already finished does nothing when it fires late", async () => {
+    const h = harness();
+    createSessionChain(h.deps)({} as HTMLElement, CHILD, OFF);
+    h.finishLantern();
+    await flush();
+    h.finish("star-path");
+    await flush();
+    expect(h.log).toContain("mount:bridge-wait");
+    h.skipAt(0); // star-path's control, late
+    h.skipAt(0);
+    await flush();
+    expect(h.log).not.toContain("destroy:bridge-wait"); // the running game is untouched
+    expect(h.log).not.toContain("mount:treasure-choice");
+  });
+
+  it("the hold duration is a named TODO design choice", () => {
+    expect(DEFAULT_SKIP_HOLD_MS).toBeGreaterThan(0);
+  });
+});
+
+describe("createHoldDetector (the long press behind the skip control)", () => {
+  function fakeTimers() {
+    let fn: (() => void) | null = null;
+    let ms = -1;
+    return {
+      setTimer: (f: () => void, t: number) => {
+        fn = f;
+        ms = t;
+        return 1;
+      },
+      clearTimer: () => (fn = null),
+      fire: () => fn?.(),
+      armed: () => fn !== null,
+      ms: () => ms,
+    };
+  }
+
+  it("fires once after the hold, and not when the finger lifts early", () => {
+    const t = fakeTimers();
+    let n = 0;
+    const d = createHoldDetector(900, () => n++, t.setTimer, t.clearTimer);
+    d.down();
+    expect(t.ms()).toBe(900);
+    d.up(); // short tap
+    t.fire();
+    expect(n).toBe(0);
+    d.down();
+    t.fire();
+    expect(n).toBe(1);
+  });
+
+  it("a second finger or a cancelled pointer disarms it", () => {
+    const t = fakeTimers();
+    let n = 0;
+    const d = createHoldDetector(900, () => n++, t.setTimer, t.clearTimer);
+    d.down();
+    d.up();
+    expect(t.armed()).toBe(false);
+    expect(n).toBe(0);
   });
 });
