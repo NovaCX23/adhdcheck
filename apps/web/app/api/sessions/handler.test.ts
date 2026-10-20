@@ -340,3 +340,52 @@ describe("POST /api/sessions with a Lantern Watch session (the game wired into /
     expect(saved.get(session.session_id)?.session.trials).toHaveLength(20);
   });
 });
+
+describe("POST /api/sessions with the PC-02 minigames field", () => {
+  const entry = {
+    id: "star-path",
+    version: "0.1.0",
+    params: { n_stars: 9 },
+    trials: [{ i: 0, outcome: "correct" }],
+    results: { summary: { span: 2, errors: 0 } },
+  };
+
+  it("accepts a session with minigames and hands them to the store with Lantern's fields untouched", async () => {
+    const { store, saved } = memoryStore();
+    const res = await post({ ...validSessionMetrics, minigames: [entry] }, store);
+
+    expect(res.status).toBe(201);
+    const row = saved.get(validSessionMetrics.session_id);
+    expect(row?.session.minigames).toEqual([entry]);
+    expect(row?.session.trials).toEqual(validSessionMetrics.trials);
+    expect(row?.session.calibration).toEqual(validSessionMetrics.calibration);
+  });
+
+  it("scores the session the same with or without minigames (the scorer input is unchanged)", async () => {
+    const a = memoryStore();
+    const b = memoryStore();
+    const plain = await (await post(validSessionMetrics, a.store)).json();
+    const withGames = await (await post({ ...validSessionMetrics, minigames: [entry] }, b.store)).json();
+    expect(withGames).toEqual(plain);
+  });
+
+  it.each([
+    ["an unknown field on an entry", { ...entry, extra: true }],
+    ["an unknown game", { ...entry, id: "storm-watch" }],
+    ["an entry without trials or results", { id: "star-path", version: "0.1.0", params: {} }],
+  ])("rejects %s with 400 and saves nothing", async (_name, bad) => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { store, saved } = memoryStore();
+    const res = await post({ ...validSessionMetrics, minigames: [bad] }, store);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("invalid_session");
+    expect(saved.size).toBe(0);
+  });
+
+  it("rejects minigames that is not an array", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { store } = memoryStore();
+    expect((await post({ ...validSessionMetrics, minigames: entry }, store)).status).toBe(400);
+  });
+});

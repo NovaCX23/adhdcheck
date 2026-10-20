@@ -51,6 +51,30 @@ export const CalibrationSchema = z.strictObject({
   n: z.number().int().nonnegative(),
 });
 
+// PC-02 (docs/02 section 10.3, accepted by Hatem 2026-10-20): the results of the mini-games played after Lantern
+// Watch. One entry per mini-game with `id`, `version`, `params` and `trials` or `results`. Lantern Watch and its
+// calibration stay in `trials`, `calibration` and `task`, so the scorer input does not change. `params`, `trials`
+// and `results` are plain JSON whose shape belongs to each mini-game (packages/game/src/minigames/<id>/types.ts).
+// A mini-game that could not run is recorded as `results: { status: "skipped", reason }` with version "none"
+// (not part of PC-02's text: an implementation choice that the PR flags). The other blocks PC-02 mentions,
+// `motion` and `context`, are NOT added: `context` needs the R5 privacy review first, and no motion is captured yet.
+export const MINIGAME_IDS = ["star-path", "bridge-wait", "treasure-choice", "route-planner"] as const;
+
+export const MiniGameEntrySchema = z
+  .strictObject({
+    id: z.enum(MINIGAME_IDS),
+    version: z.string(),
+    params: z.record(z.string(), z.json()),
+    trials: z.array(z.json()).optional(),
+    results: z.record(z.string(), z.json()).optional(),
+  })
+  .refine((e) => e.trials !== undefined || e.results !== undefined, { message: "trials_or_results_required" });
+
+export const MiniGamesSchema = z
+  .array(MiniGameEntrySchema)
+  .max(MINIGAME_IDS.length)
+  .refine((a) => new Set(a.map((e) => e.id)).size === a.length, { message: "duplicate_minigame" });
+
 export const SessionMetricsSchema = z.strictObject({
   schema_version: z.literal("1.0"),
   session_id: z.uuid(),
@@ -62,8 +86,11 @@ export const SessionMetricsSchema = z.strictObject({
   trials: z.array(TrialSchema),
   off_target_taps: z.array(OffTargetTapSchema),
   calibration: CalibrationSchema,
+  minigames: MiniGamesSchema.optional(),
 });
 
 export type SessionMetrics = z.infer<typeof SessionMetricsSchema>;
 export type Device = z.infer<typeof DeviceSchema>;
 export type Trial = z.infer<typeof TrialSchema>;
+export type MiniGameEntry = z.infer<typeof MiniGameEntrySchema>;
+export type MiniGameId = (typeof MINIGAME_IDS)[number];
