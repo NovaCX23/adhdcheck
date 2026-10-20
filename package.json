@@ -1,0 +1,27 @@
+{
+  "name": "adhdcheck-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ADHD Check hackathon monorepo: one Next.js web app (parent pages and the child game at /play) plus shared packages.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "start": "npm run start --workspace apps/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "npm run lint --workspace apps/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "check:secrets": "node scripts/check-secrets.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "vitest": "^5.0.5"
+  }
+}

@@ -1,22 +1,25 @@
-// Early-access sign-ups from the landing page.
-// TODO: persist to Supabase (Frankfurt) table `waitlist` and send the confirmation via Resend
-// (research/03-tech-stack.md, sections 1 and 7). For the demo the address is only logged.
-
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Early-access sign-ups from the landing page. Logic and tests live in handler.ts.
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseRateLimiter, SESSIONS_RATE_LIMIT } from "@/lib/rate-limit";
+import { handleWaitlistPost } from "./handler";
 
 export async function POST(request: Request) {
-  let body: unknown;
+  let admin;
   try {
-    body = await request.json();
+    admin = createAdminClient();
   } catch {
-    return Response.json({ ok: false }, { status: 400 });
+    // No Supabase settings (a teammate running the app with no .env.local): store nothing.
+    console.error("[waitlist] failed", { error: "storage_unavailable" });
+    return Response.json({ ok: false }, { status: 503 });
   }
-
-  const { email, lang } = (body ?? {}) as { email?: unknown; lang?: unknown };
-  if (typeof email !== "string" || email.length > 254 || !EMAIL.test(email)) {
-    return Response.json({ ok: false }, { status: 400 });
-  }
-
-  console.log("[waitlist]", { email, lang: lang === "en" ? "en" : "ro", at: new Date().toISOString() });
-  return Response.json({ ok: true });
+  return handleWaitlistPost(request, {
+    store: {
+      async add(email, lang) {
+        const { error } = await admin.rpc("join_waitlist", { p_email: email, p_lang: lang });
+        if (error) throw new Error(`join_waitlist failed: ${error.message}`);
+      },
+    },
+    // Same placeholder limit as session posts (TODO in docs/02 NFR-13).
+    rateLimiter: createSupabaseRateLimiter(admin, SESSIONS_RATE_LIMIT),
+  });
 }

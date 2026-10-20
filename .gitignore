@@ -1,0 +1,23 @@
+# dependencies and build output
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+.vercel/
+
+# secrets: names only in .env.example, never values
+.env*
+!.env.example
+
+# supabase local temp
+supabase/.temp/
+supabase/.branches/
+
+# OS and editor
+.DS_Store
+Thumbs.db
+npm-debug.log*
