@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type Ref } from "react";
 import { resolvePlayLink, uploadSession, type Consent } from "@/lib/play-client";
 import { runPlayFlow, type Screen } from "./flow";
-import { sessionGame } from "./game";
+import { sessionGame, type SessionGameRun } from "./game";
 import { PLAY_STRINGS } from "./strings";
 
 // FR-14: full screen and the current orientation, both asked inside the start tap (browsers only allow
@@ -36,11 +36,13 @@ export function PlayLinkClient({ code }: { code: string }) {
   const [screen, setScreen] = useState<Screen>({ kind: "checking" });
   const gameRef = useRef<HTMLDivElement>(null);
   const startRef = useRef<() => void>(() => {});
-  const started = useRef(false);
 
+  // R3-L1: leaving the page (or React dev mode running the effect twice) stops the game that was started and
+  // ends the flow, so no render loop, WebGL context, AudioContext or listener is left running and a return
+  // to the page starts one clean instance.
   useEffect(() => {
-    if (started.current) return; // React dev mode runs effects twice; the flow must run once.
-    started.current = true;
+    const controller = new AbortController();
+    let run: SessionGameRun | undefined;
     const game = sessionGame;
     void runPlayFlow(code, {
       resolve: (c) => resolvePlayLink(c),
@@ -48,14 +50,21 @@ export function PlayLinkClient({ code }: { code: string }) {
         ? (childId, consent) => {
             const el = gameRef.current;
             if (!el) throw new Error("game container missing");
-            return game(el, childId, consent);
+            run = game(el, childId, consent);
+            return run.promise;
           }
         : null,
       waitForStart: () => new Promise<void>((resolve) => (startRef.current = resolve)),
       upload: (c, metrics) => uploadSession(c, metrics),
       waitForNetwork,
-      show: setScreen,
-    });
+      show: (next) => {
+        if (!controller.signal.aborted) setScreen(next);
+      },
+    }, controller.signal);
+    return () => {
+      controller.abort();
+      run?.destroy();
+    };
   }, [code]);
 
   return <PlayScreen screen={screen} gameRef={gameRef} onStart={() => startRef.current()} />;

@@ -34,7 +34,9 @@ import { buildLuma, makeOutlineMaterial, outline, type LumaRig } from "../bridge
 import { Particles } from "../bridge-wait/scene";
 import { WATER_Y, buildWorld, type World } from "../bridge-wait/world";
 import { isPrimaryPointer } from "../../pointer";
-import { estimateRefreshHz, normalizePointerType, type PointerKind, type TaskConfig } from "./logic";
+import { CreatureView } from "./creature";
+import { forwardPointerDown } from "./input";
+import { estimateRefreshHz, hitRadius, normalizePointerType, type PointerKind, type TaskConfig } from "./logic";
 import { buildFirefly, buildLanterns, buildMoth, GLASS_OFF, GO_GLASS, GO_HALO, NOGO_GLASS, NOGO_HALO, type Lantern } from "./props";
 import { LanternWatchRunner, type ActiveTrial, type RunData, type RunState } from "./runner";
 import { buildSessionMetrics } from "./session";
@@ -47,6 +49,7 @@ export interface SceneOptions {
   childId: string;
   anticipationMs: number | null;
   assetBase: string;
+  autoStart: boolean;
   onComplete?: (metrics: SessionMetrics) => void;
   onError?: (err: unknown) => void;
 }
@@ -54,7 +57,6 @@ export interface SceneOptions {
 /** Celebration shown before the session is handed back to the page. TODO: design choice. */
 export const CELEBRATE_MS = 3500;
 const FLIGHT_MS = 620;
-const LEAVE_MS = 240;
 const LIGHT_ON = 4.2;
 const FIREFLY_SCALE = 1.55;
 
@@ -162,7 +164,11 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
   let lastState: RunState = "intro";
   let lit: { lantern: number; type: ActiveTrial["type"]; start: number } | null = null;
   let flight: { from: Vector3; start: number } | null = null;
-  let leaving: { what: "firefly" | "moth"; start: number; from: Vector3 } | null = null;
+  const creature = new CreatureView();
+  const showCreatures = () => {
+    moth.root.visible = creature.visible.moth;
+    firefly.root.visible = creature.visible.firefly;
+  };
   let handTarget: { lantern: number; mode: "press" | "hold" } | null = null;
   let decorTarget = 1;
   let decorLevel = 0;
@@ -199,28 +205,26 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
     lampLight.intensity = go ? LIGHT_ON : LIGHT_ON * 0.55;
     lampLight.position.set(l.centre.x, l.centre.y + 0.2, l.centre.z + 0.9);
     lit = { lantern: trial.lantern, type: trial.type, start: ts };
-    leaving = null;
+    creature.show(trial.type);
     if (go) {
       flight = null;
-      firefly.root.visible = true;
       firefly.root.position.set(l.centre.x, l.centre.y - 0.02, l.centre.z + 0.62);
       firefly.root.scale.setScalar(FIREFLY_SCALE);
-      moth.root.visible = false;
     } else {
-      moth.root.visible = true;
       // Smaller than the glass, low on its front, so the blue glow stays visible around the moth.
       moth.root.position.set(l.centre.x, l.centre.y - 0.08, l.centre.z + 0.42);
       moth.root.scale.setScalar(MOTH_SCALE);
-      firefly.root.visible = flight !== null; // a firefly still flying to Luma finishes its flight
     }
+    showCreatures(); // a firefly still flying to Luma finishes its flight
   };
 
-  const unlight = (ts: number) => {
+  const unlight = () => {
     if (!lit) return;
     lanternOff(lit.lantern);
     lampLight.intensity = 0;
-    if (lit.type === "nogo") leaving = { what: "moth", start: ts, from: moth.root.position.clone() };
-    else if (!flight) leaving = { what: "firefly", start: ts, from: firefly.root.position.clone() };
+    // The creature is gone in this very frame: stimulus_ms is the time it is shown (see creature.ts).
+    creature.hide();
+    showCreatures();
     lit = null;
   };
 
@@ -285,8 +289,8 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
         if (trial.phase === "practice" && trial.type !== "nogo") handTarget = { lantern: trial.lantern, mode: "press" };
         else handTarget = null;
       },
-      onHide: (ts) => {
-        unlight(ts);
+      onHide: () => {
+        unlight();
         parent.dataset.stim = "";
         if (handTarget) handTarget = null;
       },
@@ -296,7 +300,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
         const l = lanterns[trial.lantern] as Lantern;
         sparkles.spawn(new Vector3(l.centre.x, l.centre.y, l.centre.z + 0.5), 18, SPARK, 1.8, 600, -1.5);
         flight = { from: firefly.root.position.clone(), start: lastTs };
-        leaving = null;
+        creature.caught();
         handTarget = null;
       },
       onBreakReady: () => ui.play(true),
@@ -306,8 +310,10 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
     },
   );
   parent.dataset.phase = "intro";
-  ui.say(STRINGS.start);
-  ui.play(true);
+  if (!opts.autoStart) {
+    ui.say(STRINGS.start);
+    ui.play(true);
+  }
 
   // ---- geometry of the lanterns on screen (hit test, hand) ----
   let viewW = 1;
@@ -327,11 +333,11 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
       s.y = y + r * 0.1; // the target zone reaches a little below the glass, over the stand
       s.r = r;
     }
-    // Never overlapping, never under 34 px (a 68 px target, above the 44 px floor of the dev skill).
+    // At least 34 px (a 68 px target), never overlapping: see hitRadius in logic.ts.
     const a = screen[0] as { x: number };
     const b = screen[1] as { x: number };
-    const half = Math.abs(b.x - a.x) / 2 - 2;
-    for (const s of screen) s.r = Math.min(Math.max(s.r, 34), half);
+    const gap = Math.abs(b.x - a.x);
+    for (const s of screen) s.r = hitRadius(s.r, gap);
     // For end-to-end checks (Playwright): lantern centres and hit radii in CSS px.
     parent.dataset.lanterns = screen.map((s) => `${s.x.toFixed(0)},${s.y.toFixed(0)},${s.r.toFixed(0)}`).join(";");
   };
@@ -352,13 +358,11 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
     if (!isPrimaryPointer(e)) return; // a second finger is not a response
     audio.unlock(); // inside the gesture: required by iOS Safari
     const r = ui.root.getBoundingClientRect();
-    const x = e.clientX - r.left;
-    const y = e.clientY - r.top;
     const state = runner.state;
     if (pointerKind === null && (state === "calib" || state === "trials")) {
       pointerKind = normalizePointerType(e.pointerType, window.matchMedia?.("(pointer: coarse)").matches ? "touch" : "mouse");
     }
-    const kind = runner.pointerDown(e.timeStamp, x, y, hitLantern(x, y));
+    const kind = forwardPointerDown(e, r, runner, hitLantern);
     if (kind === "start" || kind === "continue") {
       ui.play(false);
       audio.play("start", 0.6);
@@ -552,30 +556,13 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
       firefly.root.scale.setScalar(FIREFLY_SCALE * (1 - 0.5 * e));
       if (k >= 1) {
         flight = null;
-        firefly.root.visible = false;
+        creature.landed();
+        showCreatures();
         sparkles.spawn(to, 22, SPARK, 2.0, 700, -2.0);
         happyUntil = ts + 420;
         audio.play("sparkle", 0.4);
       }
     }
-    if (leaving) {
-      const k = Math.min((ts - leaving.start) / LEAVE_MS, 1);
-      const e = easeOut(k);
-      // Shrink away while rising: the outline hulls are opaque, so fading opacity would leave a dark ball.
-      if (leaving.what === "moth") {
-        moth.root.position.set(leaving.from.x + e * 0.25, leaving.from.y + e * 0.4, leaving.from.z);
-        moth.root.scale.setScalar(Math.max(0.001, MOTH_SCALE * (1 - e)));
-      } else {
-        firefly.root.position.set(leaving.from.x, leaving.from.y + e * 0.45, leaving.from.z);
-        firefly.root.scale.setScalar(Math.max(0.001, FIREFLY_SCALE * (1 - e)));
-      }
-      if (k >= 1) {
-        if (leaving.what === "moth") moth.root.visible = false;
-        else firefly.root.visible = false;
-        leaving = null;
-      }
-    }
-
     poseLuma(ts);
 
     // Decorative fireflies: only outside the measured trial loop.
@@ -630,6 +617,8 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
     renderer.render(scene, camera);
   };
   raf = requestAnimationFrame(frame);
+  // The play page already took the start tap, so the first frame moves on to the calibration intro.
+  if (opts.autoStart) runner.pointerDown(performance.now(), 0, 0, null);
 
   return {
     destroy: () => {

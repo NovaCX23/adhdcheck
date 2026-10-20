@@ -9,38 +9,65 @@ import { PLAY_STRINGS } from "./strings";
 // packages/sensors, FR-71/72) only when that flag of `consent` is true; both are false unless the parent
 // switched them on before creating the link. Mini-games such as Bridge Wait or Star Path cannot fill this
 // slot: their results are not SessionMetrics (the `minigames` block is still a proposal, docs/02 section 10.3).
-export type SessionGame = (el: HTMLElement, childId: string, consent: Consent) => Promise<SessionMetrics>;
+//
+// destroy() stops the game (render loop, WebGL, audio, listeners) and is what the page calls when it is left
+// (R3-L1); after it the promise never settles, so nothing is uploaded.
+export type SessionGameRun = { promise: Promise<SessionMetrics>; destroy(): void };
+export type SessionGame = (el: HTMLElement, childId: string, consent: Consent) => SessionGameRun;
+
+type Handle = { destroy(): void };
+type MountOptions = {
+  childId: string;
+  autoStart: boolean;
+  onComplete: (metrics: SessionMetrics) => void;
+  onError: () => void;
+};
+export type MountLanternWatch = (el: HTMLElement, opts: MountOptions) => Promise<Handle>;
 
 /**
  * Lantern Watch. `consent` is accepted but no sensor is started: packages/sensors has no capture yet and
  * SessionMetrics v1 has no camera or microphone block (PC-04 proposed), so the camera and microphone are never requested (FR-70).
  * If the 3D game cannot start (no WebGL), the calm "ask your parent" sentence replaces it and the promise never
- * resolves, so nothing is uploaded.
+ * resolves, so nothing is uploaded. The play page already took the child's start tap, so the game starts by itself.
  */
-export const sessionGame: SessionGame | null = (el, childId, consent) => {
-  void consent;
-  return new Promise<SessionMetrics>((resolve) => {
-    let handle: { destroy(): void } | undefined;
-    const fail = () => {
+export function createSessionGame(loadMount: () => Promise<MountLanternWatch>): SessionGame {
+  return (el, childId, consent) => {
+    void consent;
+    let handle: Handle | undefined;
+    let cancel: (() => void) | undefined;
+    let destroyed = false;
+    const stop = () => {
+      destroyed = true;
+      cancel?.();
       handle?.destroy();
       handle = undefined;
-      el.replaceChildren();
-      el.textContent = PLAY_STRINGS.unavailable;
     };
-    // The module is loaded here, in the browser, so three.js never runs during server rendering.
-    const mounting = import("@adhdcheck/game").then(({ mountLanternWatch }) =>
-      mountLanternWatch(el, {
-        childId,
-        onComplete: (metrics) => {
-          handle?.destroy();
-          handle = undefined;
-          resolve(metrics);
-        },
-        onError: fail,
-      }),
-    );
-    mountWithFallback(el, mounting, PLAY_STRINGS.unavailable, (h) => {
-      handle = h;
+    const promise = new Promise<SessionMetrics>((resolve) => {
+      const fail = () => {
+        handle?.destroy();
+        handle = undefined;
+        el.replaceChildren();
+        el.textContent = PLAY_STRINGS.unavailable;
+      };
+      // The module is loaded here, in the browser, so three.js never runs during server rendering.
+      const mounting = loadMount().then((mount) =>
+        mount(el, {
+          childId,
+          autoStart: true,
+          onComplete: (metrics) => {
+            handle?.destroy();
+            handle = undefined;
+            if (!destroyed) resolve(metrics);
+          },
+          onError: fail,
+        }),
+      );
+      cancel = mountWithFallback(el, mounting, PLAY_STRINGS.unavailable, (h) => {
+        handle = h;
+      });
     });
-  });
-};
+    return { promise, destroy: stop };
+  };
+}
+
+export const sessionGame: SessionGame | null = createSessionGame(() => import("@adhdcheck/game").then((m) => m.mountLanternWatch));

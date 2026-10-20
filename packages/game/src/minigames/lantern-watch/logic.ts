@@ -114,3 +114,16 @@ export function estimateRefreshHz(frameIntervalsMs: readonly number[]): number |
 export function normalizePointerType(raw: string | undefined, fallback: PointerKind): PointerKind {
   return raw === "touch" || raw === "mouse" || raw === "pen" ? raw : fallback;
 }
+
+/** Smallest hit radius of a lantern, in CSS px (a 68 px target, above the 44 px floor of the dev skill). */
+export const MIN_HIT_RADIUS_PX = 34;
+
+/**
+ * Hit radius of one lantern: its drawn radius, at least MIN_HIT_RADIUS_PX, and never more than half the gap
+ * between two lanterns (minus 2 px), so two hit areas never overlap and a tap cannot belong to both. When the
+ * lanterns are closer than twice the floor, not overlapping wins over the floor.
+ */
+export function hitRadius(drawnRadius: number, lanternGapPx: number): number {
+  const half = lanternGapPx / 2 - 2;
+  return Math.min(Math.max(drawnRadius, MIN_HIT_RADIUS_PX), half);
+}

@@ -5,9 +5,7 @@ import { newPlayCode } from "../../../lib/play-link";
 import type { RateLimiter } from "../../../lib/rate-limit";
 import { handleSessionPost, MAX_BODY_BYTES, MAX_OFF_TARGET_TAPS, MAX_TRIALS } from "./handler";
 import { InvalidPlayLinkError, type SessionStore } from "./store";
-import { DEFAULT_TASK } from "../../../../../packages/game/src/minigames/lantern-watch/logic";
-import { LanternWatchRunner, type RunData } from "../../../../../packages/game/src/minigames/lantern-watch/runner";
-import { buildSessionMetrics } from "../../../../../packages/game/src/minigames/lantern-watch/session";
+import { DEFAULT_TASK, LanternWatchRunner, buildSessionMetrics, type RunData } from "@adhdcheck/game";
 
 // In-memory store: same contract as the Supabase store, no database needed.
 function memoryStore() {

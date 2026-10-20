@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEmailSender, EMAIL_FROM, type EmailTransport } from "./sender";
+import { createEmailSender, DEFAULT_EMAIL_FROM, resolveEmailFrom, type EmailTransport } from "./sender";
 
 const message = { subject: "Hello", text: "Body", html: "<p>Body</p>" };
 const to = "parent.synthetic@example.test";
@@ -13,7 +13,28 @@ describe("createEmailSender (FR-50)", () => {
     const result = await createEmailSender(transport, { sleep: noWait }).send({ to, message, idempotencyKey: "k1" });
 
     expect(result).toBe("sent");
-    expect(transport).toHaveBeenCalledWith({ from: EMAIL_FROM, to: [to], ...message }, { idempotencyKey: "k1" });
+    expect(transport).toHaveBeenCalledWith({ from: DEFAULT_EMAIL_FROM, to: [to], ...message }, { idempotencyKey: "k1" });
+  });
+
+  it("sends from the configured sender when one is given", async () => {
+    const transport = vi.fn<EmailTransport>().mockResolvedValue({ data: { id: "e1" }, error: null });
+    await createEmailSender(transport, { sleep: noWait, from: "ADHDCheck <hello@verified.example.test>" }).send({ to, message, idempotencyKey: "k1" });
+    expect(transport.mock.calls[0]![0].from).toBe("ADHDCheck <hello@verified.example.test>");
+  });
+
+  it("skips (and sends nothing) when there is no sender address", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const transport = vi.fn<EmailTransport>();
+    expect(await createEmailSender(transport, { from: null }).send({ to, message, idempotencyKey: "k1" })).toBe("skipped");
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  // R3-E5
+  it("R3-E5 gives up on a provider that never answers, instead of holding the caller", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const transport = vi.fn<EmailTransport>(() => new Promise(() => {}));
+    expect(await createEmailSender(transport, { sleep: noWait, timeoutMs: 20 }).send({ to, message, idempotencyKey: "k1" })).toBe("failed");
+    expect(transport).toHaveBeenCalledTimes(1);
   });
 
   it("skips quietly when no key is configured", async () => {
@@ -47,5 +68,16 @@ describe("createEmailSender (FR-50)", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const transport = vi.fn<EmailTransport>().mockRejectedValue(new Error("network down"));
     expect(await createEmailSender(transport, { sleep: noWait }).send({ to, message, idempotencyKey: "k1" })).toBe("failed");
+  });
+});
+
+describe("resolveEmailFrom (one sender setting, EMAIL_FROM, for every email)", () => {
+  it("uses EMAIL_FROM when set", () => {
+    expect(resolveEmailFrom({ EMAIL_FROM: " ADHDCheck <hello@verified.example.test> ", NODE_ENV: "production" })).toBe("ADHDCheck <hello@verified.example.test>");
+  });
+  it("falls back to the Resend test sender outside production only", () => {
+    expect(resolveEmailFrom({ NODE_ENV: "development" })).toBe(DEFAULT_EMAIL_FROM);
+    expect(resolveEmailFrom({ EMAIL_FROM: "  ", NODE_ENV: "test" })).toBe(DEFAULT_EMAIL_FROM);
+    expect(resolveEmailFrom({ NODE_ENV: "production" })).toBeNull();
   });
 });

@@ -81,7 +81,10 @@ const STYLE = {
 } as const;
 
 export async function renderReportPdf(model: ReportModel): Promise<Uint8Array> {
-  const doc = await PDFDocument.create();
+  // updateMetadata false: pdf-lib would stamp the current time as creation and modification date, so the
+  // same report rendered twice would differ, and Resend refuses a retry of the same idempotency key whose
+  // payload changed (409 invalid_idempotent_request).
+  const doc = await PDFDocument.create({ updateMetadata: false });
   doc.setTitle(S.result.title);
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);

@@ -6,7 +6,9 @@ import { buildSessionMetrics } from "./session";
 
 const FRAME = 1000 / 60;
 
-type Tap = { t: number; lantern: number | null; x?: number; y?: number };
+// t: the event.timeStamp; deliver: when the event reaches the page (default t). A busy main thread delivers a
+// pointer event after the frame callback that already closed the trial the event belongs to.
+type Tap = { t: number; lantern: number | null; x?: number; y?: number; deliver?: number };
 type Child = (trial: ActiveTrial, onset: number) => Tap[];
 
 /** Drives the runner like the scene does: pending pointer events are dispatched before each frame callback. */
@@ -38,8 +40,8 @@ function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; a
   r.pointerDown(ts - 5, 0, 0, null); // the start tap
   for (let k = 0; k < 400_000 && !data; k++) {
     ts += FRAME;
-    pending.sort((a, b) => a.t - b.t);
-    while (pending.length && (pending[0] as Tap).t <= ts) {
+    pending.sort((a, b) => (a.deliver ?? a.t) - (b.deliver ?? b.t));
+    while (pending.length && ((pending[0] as Tap).deliver ?? (pending[0] as Tap).t) <= ts) {
       const p = pending.shift() as Tap;
       r.pointerDown(p.t, p.x ?? 100, p.y ?? 200, p.lantern);
     }
@@ -244,5 +246,56 @@ describe("LanternWatchRunner, errors and off-target taps", () => {
     expect(() => sim({ task: two, breakTapDelay: 200 })).toThrow(/state break/);
     // The same run with the tap after BREAK_MIN_MS finishes.
     expect(sim({ task: two }).data.trials).toHaveLength(20);
+  });
+});
+
+describe("LanternWatchRunner, a tap delivered after the frame that closed its trial (R3-L3)", () => {
+  // The third go trial of the task: the tap is stamped inside its response window, delivered two frames late.
+  let seen = 0;
+  const lateGo: Child = (tr, onset) => {
+    if (tr.type === "nogo") return [];
+    if (tr.phase !== "task") return [{ t: onset + 400, lantern: tr.lantern }];
+    seen += 1;
+    const window = DEFAULT_TASK.stimulusMs + tr.isiMs;
+    return seen === 3
+      ? [{ t: onset + window - 5, lantern: tr.lantern, deliver: onset + window + FRAME * 1.5 }]
+      : [{ t: onset + 400, lantern: tr.lantern }];
+  };
+  const { data } = sim({ child: lateGo });
+
+  it("records the tap as a response to its own trial, not an omission", () => {
+    const task = data.trials.filter((t) => t.type !== "calibration");
+    const late = task.filter((t) => t.responded && (t.rt_ms as number) > 900);
+    expect(late).toHaveLength(1);
+    expect(late[0]?.outcome).toBe("hit");
+    expect(task.filter((t) => t.type === "go" && !t.responded)).toHaveLength(0);
+  });
+
+  it("does not log it as an off-target tap in the gap", () => {
+    expect(data.off_target_taps).toEqual([]);
+  });
+
+  it("still builds a valid payload", () => {
+    expect(() =>
+      buildSessionMetrics({
+        sessionId: "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b",
+        childId: "7d9e0a1b-2c3d-4e5f-8a9b-0c1d2e3f4a5b",
+        startedAt: "2026-10-20T10:00:00.000Z",
+        durationMs: data.duration_ms,
+        task: DEFAULT_TASK,
+        device: {
+          user_agent: "t",
+          pointer_type: "touch",
+          screen_w: 800,
+          screen_h: 600,
+          device_pixel_ratio: 1,
+          est_refresh_hz: 60,
+          cross_origin_isolated: false,
+          timer_clock: "performance.now",
+        },
+        trials: data.trials,
+        offTargetTaps: data.off_target_taps,
+      }),
+    ).not.toThrow();
   });
 });

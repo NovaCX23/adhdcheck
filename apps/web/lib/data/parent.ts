@@ -157,6 +157,18 @@ export async function getReportPurchase(client: SupabaseClient, sessionId: strin
   return check<ReportPurchase[]>(result, "read report purchase")[0] ?? null;
 }
 
+// R3-P1: the Stripe Checkout Session ids of this parent's pending purchases of one report, newest first, so a
+// second checkout can be refused or resumed. RLS: own rows only.
+export async function listPendingCheckoutIds(client: SupabaseClient, sessionId: string): Promise<string[]> {
+  const result = await client
+    .from("report_purchases")
+    .select("stripe_checkout_session_id")
+    .eq("session_id", sessionId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+  return check<{ stripe_checkout_session_id: string }[]>(result, "list pending checkouts").map((r) => r.stripe_checkout_session_id);
+}
+
 // FR-37: missions are always chosen by the parent; nothing here reads a score (NFR-52).
 export async function listMissions(client: SupabaseClient, childId: string): Promise<MissionRow[]> {
   const result = await client.from("missions").select(MISSION_COLUMNS).eq("child_id", childId).order("created_at");

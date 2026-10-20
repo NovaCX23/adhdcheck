@@ -8,7 +8,8 @@ import { buildReportEmail } from "./report-email";
 // short and kind, in the parent's language when known, carries the fixed headline and disclaimer in the
 // body, no result data in the subject, and no diagnosis, probability, severity or treatment wording.
 
-const BANDS = ["follow_up_suggested", "no_flag", "insufficient_data"] as const;
+// R3-P2: a session with too little data cannot be bought, so the email has no text for it.
+const BANDS = ["follow_up_suggested", "no_flag"] as const;
 const DATE = "2026-10-12T16:30:00.000Z";
 
 describe("report email (D-05b)", () => {
@@ -16,7 +17,7 @@ describe("report email (D-05b)", () => {
     for (const band of BANDS) {
       it(`${lang}, ${band}: subject carries no result, body carries the headline and the disclaimer, wording gate clean`, () => {
         const m = buildReportEmail({ lang, band, sessionDate: DATE });
-        for (const b of BANDS) {
+        for (const b of [...BANDS, "insufficient_data"] as const) {
           expect(m.subject).not.toContain(BAND_TEXT[b].headline);
         }
         expect(m.subject).not.toMatch(/adhd|assessment|evaluare|follow-up|urmărire|recommend|recomand/i);
@@ -49,6 +50,11 @@ describe("report email (D-05b)", () => {
   it("escapes HTML so no text can inject markup", () => {
     const m = buildReportEmail({ lang: "en", band: "no_flag", sessionDate: "<b>x</b>" as string });
     expect(m.html).not.toContain("<b>x</b>");
+  });
+
+  it("R3-P2 has no text for insufficient_data and refuses to build that email", () => {
+    expect(() => buildReportEmail({ lang: "ro", band: "insufficient_data" as never, sessionDate: DATE })).toThrow();
+    expect(() => buildReportEmail({ lang: "en", band: "insufficient_data" as never, sessionDate: DATE })).toThrow();
   });
 
   it("the wording gate used here can fail", () => {

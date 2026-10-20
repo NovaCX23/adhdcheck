@@ -101,6 +101,9 @@ export class LanternWatchRunner {
   private idx = -1;
   private block = 0;
   private cur: ActiveTrial | null = null;
+  // The last trial that closed without a response, kept open to events stamped inside its window but delivered
+  // after the frame that closed it (a busy main thread). patch() writes the response into its record.
+  private lastClosed: { trial: ActiveTrial; windowMs: number; patch(tMs: number, x: number, y: number): void } | null = null;
 
   constructor(cfg: RunnerConfig, hooks: RunnerHooks = {}) {
     this.task = cfg.task;
@@ -145,6 +148,19 @@ export class LanternWatchRunner {
       case "practice":
       case "trials": {
         const c = this.cur;
+        const late = this.lastClosed;
+        if (
+          late &&
+          lantern === late.trial.lantern &&
+          late.trial.onset !== null &&
+          tMs >= late.trial.onset &&
+          tMs < late.trial.onset + late.windowMs &&
+          (!c || c.onset === null || tMs < c.onset)
+        ) {
+          late.patch(tMs, x, y);
+          this.lastClosed = null;
+          return "response";
+        }
         if (c && c.onset !== null && tMs >= c.onset && !c.responded && lantern === c.lantern) {
           const window = c.type === "calibration" ? RESPONSE_WINDOW_MS : this.task.stimulusMs + c.isiMs;
           const inWindow = tMs < c.onset + window;
@@ -266,14 +282,20 @@ export class LanternWatchRunner {
     if (c.responded || ts - c.onset >= RESPONSE_WINDOW_MS) {
       this.hide(c, ts);
       if (c.phase === "calibration") {
-        this.calibRecords.push(
-          toContractTrial(
-            { i: this.calibRecords.length, onsetMs: c.onset, tapMs: c.responded ? c.onset + (c.rtMs as number) : null, x: c.x, y: c.y },
-            this.t0,
-            RESPONSE_WINDOW_MS,
-          ),
-        );
-      }
+        const at = this.calibRecords.length;
+        const build = (tapMs: number | null, x: number, y: number) =>
+          toContractTrial({ i: at, onsetMs: c.onset as number, tapMs, x, y }, this.t0, RESPONSE_WINDOW_MS);
+        this.calibRecords.push(build(c.responded ? (c.onset as number) + (c.rtMs as number) : null, c.x, c.y));
+        this.lastClosed = c.responded
+          ? null
+          : {
+              trial: c,
+              windowMs: RESPONSE_WINDOW_MS,
+              patch: (tMs, x, y) => {
+                this.calibRecords[at] = build(tMs, x, y);
+              },
+            };
+      } else this.lastClosed = null;
       this.nextCalibration(ts);
     }
   }
@@ -345,6 +367,24 @@ export class LanternWatchRunner {
 
   private record(c: ActiveTrial) {
     const onset = c.onset as number;
+    const at = this.records.length;
+    this.lastClosed = c.responded
+      ? null
+      : {
+          trial: c,
+          windowMs: this.task.stimulusMs + c.isiMs,
+          patch: (tMs, x, y) => {
+            const rt = tMs - onset;
+            this.records[at] = {
+              ...(this.records[at] as Trial),
+              responded: true,
+              rt_ms: rt,
+              outcome: classify(c.type, true, rt, this.anticipationMs),
+              x,
+              y,
+            };
+          },
+        };
     this.records.push({
       i: this.records.length,
       block: c.block,

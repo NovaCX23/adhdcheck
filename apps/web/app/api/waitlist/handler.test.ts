@@ -10,7 +10,9 @@ function memoryStore() {
   const saved = new Map<string, string>();
   const store: WaitlistStore = {
     async add(email, lang) {
-      if (!saved.has(email)) saved.set(email, lang);
+      if (saved.has(email)) return false;
+      saved.set(email, lang);
+      return true;
     },
   };
   return { store, saved };
@@ -18,10 +20,15 @@ function memoryStore() {
 
 const allowAll: RateLimiter = { take: async () => true };
 const quietEmail = (): EmailSender & { send: ReturnType<typeof vi.fn> } => ({ send: vi.fn().mockResolvedValue("sent") });
+const defers: Array<() => Promise<void>> = [];
+const defer = (task: () => Promise<void>) => void defers.push(task);
+async function flush() {
+  while (defers.length) await defers.shift()!();
+}
 
 function post(
   body: unknown,
-  { store = memoryStore().store, rateLimiter = allowAll, contentType = "application/json", email = quietEmail() as EmailSender } = {},
+  { store = memoryStore().store, rateLimiter = allowAll, emailCap = allowAll as RateLimiter, contentType = "application/json", email = quietEmail() as EmailSender } = {},
 ) {
   return handleWaitlistPost(
     new Request("http://localhost/api/waitlist", {
@@ -29,17 +36,21 @@ function post(
       headers: { "content-type": contentType },
       body: typeof body === "string" ? body : JSON.stringify(body),
     }),
-    { store, rateLimiter, email },
+    { store, rateLimiter, emailCap, email, defer },
   );
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  defers.length = 0;
+});
 
 describe("POST /api/waitlist confirmation email (FR-50)", () => {
   it("sends a confirmation in the page language, once per address (idempotency key without the address)", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const email = quietEmail();
     await post({ email: "Parent.Synthetic@Example.TEST", lang: "ro" }, { email });
+    await flush();
 
     expect(email.send).toHaveBeenCalledTimes(1);
     const sent = email.send.mock.calls[0][0];
@@ -61,7 +72,65 @@ describe("POST /api/waitlist confirmation email (FR-50)", () => {
     const email = quietEmail();
     const failing: WaitlistStore = { add: async () => Promise.reject(new Error("down")) };
     await post({ email: EMAIL, lang: "en" }, { store: failing, email });
+    await flush();
     expect(email.send).not.toHaveBeenCalled();
+  });
+
+  // R3-E1: the form must not be a way to mail any address every day.
+  it("R3-E1 sends the confirmation only for a NEW address: a second post of the same address sends nothing", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const email = quietEmail();
+    const { store } = memoryStore();
+    await post({ email: EMAIL, lang: "en" }, { store, email });
+    await post({ email: EMAIL.toUpperCase(), lang: "en" }, { store, email });
+    await flush();
+    expect(email.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("R3-E1 sends nothing once the global daily cap of confirmation emails is reached, and still answers ok", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const email = quietEmail();
+    const emailCap: RateLimiter = { take: vi.fn().mockResolvedValue(false) };
+    const res = await post({ email: EMAIL, lang: "en" }, { email, emailCap });
+    await flush();
+    expect(await res.json()).toEqual({ ok: true });
+    expect(email.send).not.toHaveBeenCalled();
+  });
+
+  it("R3-E1 sends nothing, and still answers ok, when the cap counter is down", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const email = quietEmail();
+    const emailCap: RateLimiter = { take: vi.fn().mockRejectedValue(new Error("down")) };
+    const res = await post({ email: EMAIL, lang: "en" }, { email, emailCap });
+    await flush();
+    expect(await res.json()).toEqual({ ok: true });
+    expect(email.send).not.toHaveBeenCalled();
+  });
+
+  // R3-E3: a mutation that adds Math.random() to the hashed address used to pass every test.
+  it("R3-E3 gives the same address, in any case, the same idempotency key, and another address another key", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const email = quietEmail();
+    const alwaysNew: WaitlistStore = { add: async () => true };
+    await post({ email: "Parent.Synthetic@Example.TEST", lang: "en" }, { store: alwaysNew, email });
+    await post({ email: EMAIL, lang: "en" }, { store: alwaysNew, email });
+    await post({ email: "someone.else@example.test", lang: "en" }, { store: alwaysNew, email });
+    await flush();
+    const keys = email.send.mock.calls.map((c) => c[0].idempotencyKey);
+    expect(keys).toHaveLength(3);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+
+  // R3-E5: the confirmation is sent after the answer, so a slow provider cannot hold the request.
+  it("R3-E5 does not wait for the email before answering", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const email = quietEmail();
+    await post({ email: EMAIL, lang: "en" }, { email });
+    expect(email.send).not.toHaveBeenCalled();
+    await flush();
+    expect(email.send).toHaveBeenCalledTimes(1);
   });
 });
 

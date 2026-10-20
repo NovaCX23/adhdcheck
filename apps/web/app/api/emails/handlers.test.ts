@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { missionAddedEmail, weeklySummaryEmail } from "../../../lib/email/messages";
 import type { EmailSender } from "../../../lib/email/sender";
+import type { RateLimiter } from "../../../lib/rate-limit";
 import { handleMissionEmail, handleWeeklySummaryEmail, isoWeek } from "./handlers";
 
 const PARENT = { id: "00000000-0000-4000-8000-00000000000a", email: "parent.synthetic@example.test" };
 const MISSION = "00000000-0000-4000-8000-0000000000aa";
-const DASHBOARD = "http://localhost/parent";
+const SITE = "https://site.example.test";
+const DASHBOARD = `${SITE}/parent`;
 
 function request(path: string, body: unknown) {
   return new Request(`http://localhost${path}`, {
@@ -15,10 +17,14 @@ function request(path: string, body: unknown) {
   });
 }
 
-function deps({ parent = PARENT as typeof PARENT | null, owns = true, result = "sent" } = {}) {
-  const email = { send: vi.fn().mockResolvedValue(result) } satisfies EmailSender;
-  const missionIsOwn = vi.fn().mockResolvedValue(owns);
-  return { email, missionIsOwn, getParent: async () => parent, now: () => new Date("2026-10-20T12:00:00Z") };
+function deps(
+  o: Partial<{ parent: { id: string; email: string; emailConfirmed: boolean } | null; owns: boolean; result: string; allow: boolean; siteUrl: string | undefined }> = {},
+) {
+  const c = { parent: { ...PARENT, emailConfirmed: true } as { id: string; email: string; emailConfirmed: boolean } | null, owns: true, result: "sent", allow: true, siteUrl: SITE as string | undefined, ...o };
+  const email = { send: vi.fn().mockResolvedValue(c.result) } satisfies EmailSender;
+  const missionIsOwn = vi.fn().mockResolvedValue(c.owns);
+  const take = vi.fn<RateLimiter["take"]>().mockResolvedValue(c.allow);
+  return { email, missionIsOwn, rateLimiter: { take } satisfies RateLimiter, take, siteUrl: c.siteUrl, getParent: async () => c.parent, now: () => new Date("2026-10-20T12:00:00Z") };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -58,6 +64,45 @@ describe("POST /api/emails/mission (FR-50 new mission)", () => {
     expect(d.email.send).not.toHaveBeenCalled();
   });
 
+  // R3-E2
+  it("R3-E2 refuses a parent whose address is not confirmed, and sends nothing", async () => {
+    const d = deps({ parent: { ...PARENT, emailConfirmed: false } });
+    const res = await handleMissionEmail(request("/api/emails/mission", { mission_id: MISSION }), d);
+    expect(res.status).toBe(403);
+    expect(d.email.send).not.toHaveBeenCalled();
+  });
+
+  it("R3-E2 answers 429 when the rate limit is reached, and sends nothing", async () => {
+    const d = deps({ allow: false });
+    const res = await handleMissionEmail(request("/api/emails/mission", { mission_id: MISSION }), d);
+    expect(res.status).toBe(429);
+    expect(d.email.send).not.toHaveBeenCalled();
+    expect(d.take).toHaveBeenCalledWith(`emails:${PARENT.id}`);
+  });
+
+  it("R3-E2 answers 503 and sends nothing when the rate limiter is down", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = deps();
+    d.take.mockRejectedValue(new Error("down"));
+    expect((await handleMissionEmail(request("/api/emails/mission", { mission_id: MISSION }), d)).status).toBe(503);
+    expect(d.email.send).not.toHaveBeenCalled();
+  });
+
+  it("R3-E4 builds the dashboard link from SITE_URL, never from the request origin", async () => {
+    const d = deps({ siteUrl: "https://configured.example.test/" });
+    await handleMissionEmail(request("/api/emails/mission", { mission_id: MISSION }), d);
+    expect(d.email.send.mock.calls[0]![0].message.text).toContain("https://configured.example.test/parent");
+    expect(d.email.send.mock.calls[0]![0].message.text).not.toContain("localhost");
+  });
+
+  it("R3-E4 sends nothing and answers skipped when SITE_URL is not configured", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = deps({ siteUrl: undefined });
+    const res = await handleMissionEmail(request("/api/emails/mission", { mission_id: MISSION }), d);
+    expect(await res.json()).toEqual({ email: "skipped" });
+    expect(d.email.send).not.toHaveBeenCalled();
+  });
+
   it("answers 200 with the email outcome when sending fails, so the mission itself stays added", async () => {
     const res = await handleMissionEmail(request("/api/emails/mission", { mission_id: MISSION }), deps({ result: "failed" }));
     expect(res.status).toBe(200);
@@ -76,6 +121,15 @@ describe("POST /api/emails/weekly (FR-50 weekly summary)", () => {
       message: weeklySummaryEmail(DASHBOARD),
       idempotencyKey: `weekly-summary/${PARENT.id}/2026-W43`,
     });
+  });
+
+  it("R3-E2 refuses an unconfirmed address and rate limits the weekly route too", async () => {
+    const unconfirmed = deps({ parent: { ...PARENT, emailConfirmed: false } });
+    expect((await handleWeeklySummaryEmail(request("/api/emails/weekly", {}), unconfirmed)).status).toBe(403);
+    expect(unconfirmed.email.send).not.toHaveBeenCalled();
+    const limited = deps({ allow: false });
+    expect((await handleWeeklySummaryEmail(request("/api/emails/weekly", {}), limited)).status).toBe(429);
+    expect(limited.email.send).not.toHaveBeenCalled();
   });
 
   it("answers 401 without a logged-in parent", async () => {

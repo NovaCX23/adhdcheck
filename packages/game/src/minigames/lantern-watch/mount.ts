@@ -14,6 +14,9 @@ export interface LanternWatchOptions {
   stimulusMs?: number;
   /** URL prefix of the self-hosted sound samples. Default "/games/bridge-wait" (shared with Bridge Wait). */
   assetBase?: string;
+  /** The game begins by itself, with no in-game "Tap to start": the play page has its own start tap (full screen
+   * and orientation are asked inside it). The standalone page leaves this off. */
+  autoStart?: boolean;
   onComplete?: (metrics: SessionMetrics) => void;
   /** The payload could not be built (should not happen: it means a contract violation). */
   onError?: (err: unknown) => void;
@@ -40,6 +43,7 @@ export async function mountLanternWatch(parent: HTMLElement, opts: LanternWatchO
     childId: opts.childId,
     anticipationMs: ANTICIPATION_MS,
     assetBase: opts.assetBase ?? "/games/bridge-wait",
+    autoStart: opts.autoStart === true,
     onComplete: opts.onComplete,
     onError: opts.onError,
   });

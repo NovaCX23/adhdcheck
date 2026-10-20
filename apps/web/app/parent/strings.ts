@@ -66,6 +66,9 @@ export const S = {
     offerFree: "The result and the next step above stay free, whether you buy the report or not.",
     buy: "Get the report",
     buying: "Opening the payment page…",
+    // R3-P1: placeholder wording for the texts owner (TODO), shown while a Checkout was opened and not paid.
+    inProgress: "A payment for this report was started and is not confirmed yet.",
+    resume: "Continue the payment",
     confirming: "Thank you. We are confirming the payment. This can take a moment; you can reload this page.",
     sentAndHere: "Sent to your email, and available here",
     availableHere: "Your report is available here.",

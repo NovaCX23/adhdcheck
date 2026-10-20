@@ -6,6 +6,7 @@ import {
   buildSchedule,
   classify,
   estimateRefreshHz,
+  hitRadius,
   median,
   normalizePointerType,
 } from "./logic";
@@ -130,5 +131,19 @@ describe("normalizePointerType", () => {
     expect(normalizePointerType("mouse", "touch")).toBe("mouse");
     expect(normalizePointerType("", "touch")).toBe("touch");
     expect(normalizePointerType(undefined, "mouse")).toBe("mouse");
+  });
+});
+
+describe("hitRadius (R3-L5)", () => {
+  it("keeps the 34 px floor when there is room", () => {
+    expect(hitRadius(20, 400)).toBe(34);
+    expect(hitRadius(50, 400)).toBe(50);
+  });
+  it("never exceeds half the gap between two lanterns, so hit areas never overlap", () => {
+    expect(hitRadius(100, 100)).toBe(48);
+  });
+  it("lets non-overlap win over the floor when the lanterns are closer than 72 px", () => {
+    expect(hitRadius(50, 60)).toBe(28);
+    expect(hitRadius(50, 60)).toBeLessThan(34);
   });
 });

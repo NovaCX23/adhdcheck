@@ -33,14 +33,46 @@ function post(path: string, body: unknown = { sessionId: SESSION }, headers: Rec
 afterEach(() => vi.restoreAllMocks());
 
 describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", () => {
-  function deps(o: Partial<{ parentId: string | null; priceId: string; own: { childId: string; scored: boolean } | null; paid: boolean }> = {}) {
-    const c = { parentId: PARENT as string | null, priceId: PRICE, own: { childId: CHILD, scored: true } as { childId: string; scored: boolean } | null, paid: false, ...o };
+  type Retrieved = Awaited<ReturnType<CheckoutDeps["retrieveCheckout"]>>;
+  function deps(
+    o: Partial<{
+      parentId: string | null;
+      priceId: string;
+      siteUrl: string | undefined;
+      own: { childId: string; band: string | null } | null;
+      paid: boolean;
+      pending: string[];
+      retrieved: Record<string, Retrieved>;
+    }> = {},
+  ) {
+    const c = {
+      parentId: PARENT as string | null,
+      priceId: PRICE,
+      siteUrl: "https://site.example.test" as string | undefined,
+      own: { childId: CHILD, band: "no_flag" } as { childId: string; band: string | null } | null,
+      paid: false,
+      pending: [] as string[],
+      retrieved: {} as Record<string, Retrieved>,
+      ...o,
+    };
     const createCheckoutSession = vi.fn<CheckoutDeps["createCheckoutSession"]>().mockResolvedValue({ id: CHECKOUT, url: "https://checkout.example.test/s" });
     const startPurchase = vi.fn<CheckoutDeps["startPurchase"]>().mockResolvedValue("started");
     const getOwnSession = vi.fn<CheckoutDeps["getOwnSession"]>().mockResolvedValue(c.own);
     const isPaid = vi.fn<CheckoutDeps["isPaid"]>().mockResolvedValue(c.paid);
-    const d: CheckoutDeps = { getParentId: async () => c.parentId, priceId: c.priceId, getOwnSession, isPaid, createCheckoutSession, startPurchase };
-    return { d, createCheckoutSession, startPurchase, getOwnSession, isPaid };
+    const pendingCheckouts = vi.fn<CheckoutDeps["pendingCheckouts"]>().mockResolvedValue(c.pending);
+    const retrieveCheckout = vi.fn<CheckoutDeps["retrieveCheckout"]>(async (id) => c.retrieved[id] ?? null);
+    const d: CheckoutDeps = {
+      getParentId: async () => c.parentId,
+      priceId: c.priceId,
+      siteUrl: c.siteUrl,
+      getOwnSession,
+      isPaid,
+      pendingCheckouts,
+      retrieveCheckout,
+      createCheckoutSession,
+      startPurchase,
+    };
+    return { d, createCheckoutSession, startPurchase, getOwnSession, isPaid, pendingCheckouts, retrieveCheckout };
   }
 
   it("creates a one-off payment checkout for this report, with the parent and session in metadata", async () => {
@@ -54,8 +86,9 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
       parentId: PARENT,
       sessionId: SESSION,
       lang: "en",
-      successUrl: `https://demo.example.test/parent/${CHILD}?report=paid`,
-      cancelUrl: `https://demo.example.test/parent/${CHILD}`,
+      successUrl: `https://site.example.test/parent/${CHILD}?report=paid`,
+      cancelUrl: `https://site.example.test/parent/${CHILD}`,
+      idempotencyKey: expect.stringContaining(SESSION),
     });
     expect(startPurchase).toHaveBeenCalledWith({ parentId: PARENT, sessionId: SESSION, checkoutId: CHECKOUT, lang: "en" });
   });
@@ -84,7 +117,7 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
   });
 
   it("answers 404 not_scored for a session with no result yet (no report to sell)", async () => {
-    const { d, createCheckoutSession } = deps({ own: { childId: CHILD, scored: false } });
+    const { d, createCheckoutSession } = deps({ own: { childId: CHILD, band: null } });
     const res = await handleCheckout(post("/api/stripe/checkout"), d);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not_scored" });
@@ -121,6 +154,90 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
     expect((await handleCheckout(post("/api/stripe/checkout", "{}", { "content-type": "text/plain" }), d)).status).toBe(415);
   });
 
+  // R3-P1: a parent whose webhook is late, who pays by a delayed method, or who has two tabs open must not be
+  // able to open a second Checkout for a report that already has one.
+  it("R3-P1 returns the existing open Checkout instead of creating a second one", async () => {
+    const { d, createCheckoutSession } = deps({
+      pending: ["cs_open"],
+      retrieved: { cs_open: { status: "open", paymentStatus: "unpaid", url: "https://checkout.example.test/existing" } },
+    });
+    const res = await handleCheckout(post("/api/stripe/checkout"), d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ url: "https://checkout.example.test/existing" });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("R3-P1 refuses with 409 when a pending purchase's Checkout is complete (webhook late)", async () => {
+    const { d, createCheckoutSession } = deps({
+      pending: ["cs_done"],
+      retrieved: { cs_done: { status: "complete", paymentStatus: "paid", url: null } },
+    });
+    const res = await handleCheckout(post("/api/stripe/checkout"), d);
+    expect(res.status).toBe(409);
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("R3-P1 refuses with 409 when the Checkout is complete but a delayed payment is still unpaid", async () => {
+    const { d, createCheckoutSession } = deps({
+      pending: ["cs_delayed"],
+      retrieved: { cs_delayed: { status: "complete", paymentStatus: "unpaid", url: null } },
+    });
+    const res = await handleCheckout(post("/api/stripe/checkout"), d);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "payment_pending" });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("R3-P1 creates a new Checkout when every earlier one expired or is unknown to Stripe", async () => {
+    const { d, createCheckoutSession } = deps({
+      pending: ["cs_old", "cs_gone"],
+      retrieved: { cs_old: { status: "expired", paymentStatus: "unpaid", url: null } },
+    });
+    expect((await handleCheckout(post("/api/stripe/checkout"), d)).status).toBe(200);
+    expect(createCheckoutSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("R3-P1 answers 502 and opens no Checkout when Stripe cannot say what an earlier one became", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { d, createCheckoutSession, retrieveCheckout } = deps({ pending: ["cs_open"] });
+    retrieveCheckout.mockRejectedValue(new Error("stripe down"));
+    expect((await handleCheckout(post("/api/stripe/checkout"), d)).status).toBe(502);
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("R3-P1 gives two simultaneous requests for one report the same Stripe idempotency key", async () => {
+    const a = deps();
+    const b = deps();
+    await handleCheckout(post("/api/stripe/checkout"), a.d);
+    await handleCheckout(post("/api/stripe/checkout"), b.d);
+    expect(a.createCheckoutSession.mock.calls[0]![0].idempotencyKey).toBe(b.createCheckoutSession.mock.calls[0]![0].idempotencyKey);
+  });
+
+  it("R3-P2 answers 409 insufficient_data for a session with too little data, and opens no Checkout", async () => {
+    const { d, createCheckoutSession } = deps({ own: { childId: CHILD, band: "insufficient_data" } });
+    const res = await handleCheckout(post("/api/stripe/checkout"), d);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "insufficient_data" });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("R3-P6 builds the return URLs from the configured site URL, never from the request origin", async () => {
+    const { d, createCheckoutSession } = deps({ siteUrl: "https://configured.example.test/" });
+    await handleCheckout(post("/api/stripe/checkout"), d);
+    const input = createCheckoutSession.mock.calls[0]![0];
+    expect(input.successUrl).toBe(`https://configured.example.test/parent/${CHILD}?report=paid`);
+    expect(input.cancelUrl).toBe(`https://configured.example.test/parent/${CHILD}`);
+    expect(JSON.stringify(input)).not.toContain("demo.example.test");
+  });
+
+  it("R3-P6 answers 503 billing_not_configured when no site URL is configured", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { d, createCheckoutSession } = deps({ siteUrl: undefined });
+    const res = await handleCheckout(post("/api/stripe/checkout"), d);
+    expect(res.status).toBe(503);
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("answers 502 when Stripe fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { d, createCheckoutSession } = deps();
@@ -130,7 +247,7 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
 });
 
 describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
-  type Over = Partial<{ type: string; mode: string; payment_status: string; metadata: Record<string, string>; created: number }>;
+  type Over = Partial<{ type: string; mode: string; payment_status: string; metadata: Record<string, string>; created: number; amount_total: number; currency: string }>;
   function event(o: Over = {}) {
     return JSON.stringify({
       id: "evt_synthetic",
@@ -143,6 +260,8 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
           object: "checkout.session",
           mode: o.mode ?? "payment",
           payment_status: o.payment_status ?? "paid",
+          amount_total: o.amount_total ?? 999,
+          currency: o.currency ?? "eur",
           client_reference_id: PARENT,
           metadata: o.metadata ?? { parent_id: PARENT, session_id: SESSION, lang: "en" },
         },
@@ -178,8 +297,9 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
       c.mailer === "permanent" ? { ok: false, permanent: true } : c.mailer === "transient" ? { ok: false, permanent: false } : { ok: true },
     );
     const verify = (payload: string, signature: string) => stripe.webhooks.constructEvent(payload, signature, SIGNING);
-    const d: WebhookDeps = { verify, markPaid, markEmailed, getParentEmail, buildPdf, mailer: c.mailer === "none" ? null : { send } };
-    return { d, row, markPaid, markEmailed, getParentEmail, buildPdf, send };
+    const expectedPrice = vi.fn<WebhookDeps["expectedPrice"]>().mockResolvedValue({ amount: 999, currency: "eur" });
+    const d: WebhookDeps = { verify, expectedPrice, markPaid, markEmailed, getParentEmail, buildPdf, mailer: c.mailer === "none" ? null : { send } };
+    return { d, row, markPaid, markEmailed, getParentEmail, buildPdf, send, expectedPrice };
   }
 
   it.each(["checkout.session.completed", "checkout.session.async_payment_succeeded"])(
@@ -313,6 +433,42 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
     markPaid.mockRejectedValue(new Error("db down"));
     expect((await handleWebhook(signed(event()), d)).status).toBe(500);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("R3-P4 records nothing for a checkout with no payment required (a 100% coupon), even if the status is complete", async () => {
+    const { d, markPaid, send } = deps();
+    expect((await handleWebhook(signed(event({ payment_status: "no_payment_required", amount_total: 0 })), d)).status).toBe(200);
+    expect(markPaid).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a different amount", { amount_total: 100 }],
+    ["a different currency", { currency: "usd" }],
+  ])("R3-P4 records nothing when the Checkout was paid with %s than the configured price", async (_n, over) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { d, markPaid, send } = deps();
+    expect((await handleWebhook(signed(event(over)), d)).status).toBe(200);
+    expect(markPaid).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith("[stripe] webhook", { outcome: "price_mismatch" });
+  });
+
+  it("R3-P4 answers 500 so Stripe retries when the configured price cannot be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { d, expectedPrice, markPaid } = deps();
+    expectedPrice.mockRejectedValue(new Error("stripe down"));
+    expect((await handleWebhook(signed(event()), d)).status).toBe(500);
+    expect(markPaid).not.toHaveBeenCalled();
+  });
+
+  it("R3-P2 sends no email for a legacy paid purchase whose session has too little data", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { d, buildPdf, send } = deps();
+    buildPdf.mockResolvedValue({ bytes: new Uint8Array([1]), fileName: "r.pdf", band: "insufficient_data", sessionDate: "2026-10-12T16:30:00.000Z" });
+    expect((await handleWebhook(signed(event()), d)).status).toBe(200);
+    expect(send).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith("[stripe] webhook", { outcome: "insufficient_data" });
   });
 
   it("writes a short, kind email with no result data in the subject, the headline and disclaimer in the body, and the PDF attached", async () => {

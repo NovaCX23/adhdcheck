@@ -66,13 +66,13 @@ describe("the report offer and the paid state (D-05b)", () => {
 
   it.each([
     [null, false, "offer"],
-    [{ status: "pending", emailed_at: null }, false, "offer"],
+    [{ status: "pending", emailed_at: null }, false, "in_progress"],
     [{ status: "pending", emailed_at: null }, true, "confirming"],
     [null, true, "confirming"],
     [{ status: "paid", emailed_at: null }, false, "paid"],
     [{ status: "paid", emailed_at: "2026-10-20T10:00:00Z" }, false, "paid_emailed"],
     [{ status: "paid", emailed_at: "2026-10-20T10:00:00Z" }, true, "paid_emailed"],
   ] as const)("purchase %j, back from checkout %s: shows %s", (purchase, returning, view) => {
-    expect(reportView(purchase, returning)).toBe(view);
+    expect(reportView(purchase, returning, "no_flag")).toBe(view);
   });
 });

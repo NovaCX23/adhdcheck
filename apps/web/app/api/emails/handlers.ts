@@ -1,20 +1,53 @@
 import { z } from "zod";
 import { missionAddedEmail, weeklySummaryEmail } from "../../../lib/email/messages";
 import type { EmailSender } from "../../../lib/email/sender";
+import type { RateLimiter } from "../../../lib/rate-limit";
 
 // FR-50 parent emails: "new mission" and "weekly summary". Both go to the logged-in parent's own address,
 // carry only the dashboard link (no result, no nickname), and answer 200 with the email outcome even when
 // sending fails, so the action that triggered them is never undone. Nothing is logged but error codes.
 
-type Parent = { id: string; email: string };
-type Deps = { email: EmailSender; getParent(): Promise<Parent | null>; now?: () => Date };
+// emailConfirmed: the address passed Supabase's confirmation, so an email goes only to a mailbox its owner proved.
+type Parent = { id: string; email: string; emailConfirmed: boolean };
+type Deps = {
+  email: EmailSender;
+  getParent(): Promise<Parent | null>;
+  // One bucket per parent for every /api/emails/* route (R3-E2).
+  rateLimiter: RateLimiter;
+  // SITE_URL: where the dashboard link points (R3-E4); never taken from the request.
+  siteUrl: string | undefined;
+  now?: () => Date;
+};
+
+// TODO: limit not decided (docs/02 NFR-13). Placeholder: 10 emails a minute per parent, for all email routes.
+export const EMAILS_RATE_LIMIT = { limit: 10, windowSeconds: 60 };
+
+// The checks every email route runs first. Returns the parent, or the response to send.
+async function guard(deps: Deps): Promise<{ parent: Parent } | { response: Response }> {
+  const parent = await deps.getParent();
+  if (!parent) return { response: fail(401, "not_logged_in") };
+  if (!parent.emailConfirmed) return { response: fail(403, "email_not_confirmed") };
+  try {
+    if (!(await deps.rateLimiter.take(`emails:${parent.id}`))) return { response: fail(429, "rate_limited") };
+  } catch {
+    console.error("[emails] failed", { error: "storage_unavailable" });
+    return { response: fail(503, "storage_unavailable") };
+  }
+  return { parent };
+}
+
+// The link in the email; null (and the email is skipped) when SITE_URL is not set.
+function dashboardUrl(deps: Deps): string | null {
+  const site = deps.siteUrl?.trim().replace(/\/+$/, "");
+  if (!site) {
+    console.error("[emails] skipped", { error: "site_url_not_configured" });
+    return null;
+  }
+  return `${site}/parent`;
+}
 
 function fail(status: number, error: string) {
   return Response.json({ error }, { status, headers: { "cache-control": "no-store" } });
-}
-
-function dashboardUrl(request: Request) {
-  return `${new URL(request.url).origin}/parent`;
 }
 
 const MissionBody = z.strictObject({ mission_id: z.guid() });
@@ -24,8 +57,9 @@ export async function handleMissionEmail(
   request: Request,
   deps: Deps & { missionIsOwn(missionId: string): Promise<boolean> },
 ): Promise<Response> {
-  const parent = await deps.getParent();
-  if (!parent) return fail(401, "not_logged_in");
+  const checked = await guard(deps);
+  if ("response" in checked) return checked.response;
+  const { parent } = checked;
 
   let body: unknown;
   try {
@@ -39,9 +73,11 @@ export async function handleMissionEmail(
 
   if (!(await deps.missionIsOwn(missionId))) return fail(404, "unknown_mission");
 
+  const link = dashboardUrl(deps);
+  if (!link) return Response.json({ email: "skipped" }, { headers: { "cache-control": "no-store" } });
   const email = await deps.email.send({
     to: parent.email,
-    message: missionAddedEmail(dashboardUrl(request)),
+    message: missionAddedEmail(link),
     idempotencyKey: `mission-added/${missionId}`,
   });
   return Response.json({ email }, { headers: { "cache-control": "no-store" } });
@@ -49,14 +85,17 @@ export async function handleMissionEmail(
 
 // POST /api/emails/weekly: the weekly summary, sent on request until a scheduler exists (TODO: a weekly
 // job). The key holds the ISO week, so a parent gets at most one per week.
-export async function handleWeeklySummaryEmail(request: Request, deps: Deps): Promise<Response> {
-  const parent = await deps.getParent();
-  if (!parent) return fail(401, "not_logged_in");
+export async function handleWeeklySummaryEmail(_request: Request, deps: Deps): Promise<Response> {
+  const checked = await guard(deps);
+  if ("response" in checked) return checked.response;
+  const { parent } = checked;
 
+  const link = dashboardUrl(deps);
+  if (!link) return Response.json({ email: "skipped" }, { headers: { "cache-control": "no-store" } });
   const week = isoWeek((deps.now ?? (() => new Date()))());
   const email = await deps.email.send({
     to: parent.email,
-    message: weeklySummaryEmail(dashboardUrl(request)),
+    message: weeklySummaryEmail(link),
     idempotencyKey: `weekly-summary/${parent.id}/${week}`,
   });
   return Response.json({ email }, { headers: { "cache-control": "no-store" } });

@@ -181,9 +181,9 @@ Open points from 06, not verified: the licence of the `face_landmarker.task` mod
 
 | ID | Requirement | Priority | Acceptance criterion | Traces to |
 |---|---|---|---|---|
-| FR-45 | Buy one report with Stripe Checkout, `mode: "payment"`, test mode (D-05b, DECIDED, Hatem, 2026-10-20: 9.99 EUR, one-off per report, not a subscription). `POST /api/stripe/checkout` takes `{ sessionId }`, only for the logged-in parent's own scored session, puts `parent_id`, `session_id` and the email language in the Checkout Session metadata, takes the price from `STRIPE_PRICE_ID`, and refuses (409) a report that is already paid. Success returns to the child page (`/parent/<childId>?report=paid`). | Should | A test checkout completes and returns to the child page; another parent's session answers 404; a paid report answers 409 (`apps/web/app/api/stripe/handlers.test.ts`). | UN-23 |
+| FR-45 | Buy one report with Stripe Checkout, `mode: "payment"`, test mode (D-05b, DECIDED, Hatem, 2026-10-20: 9.99 EUR, one-off per report, not a subscription). `POST /api/stripe/checkout` takes `{ sessionId }`, only for the logged-in parent's own scored session, puts `parent_id`, `session_id` and the email language in the Checkout Session metadata, takes the price from `STRIPE_PRICE_ID`, and refuses (409) a report that is already paid, one whose Checkout is complete or awaiting a delayed payment, and a session with too little data (`insufficient_data`: no result to report); an earlier open Checkout of the same report is returned instead of a second one. Return URLs are built from `SITE_URL`. Success returns to the child page (`/parent/<childId>?report=paid`). | Should | A test checkout completes and returns to the child page; another parent's session answers 404; a paid report answers 409 (`apps/web/app/api/stripe/handlers.test.ts`). | UN-23 |
 | FR-46 | Retired with D-05b: a one-off payment has nothing to manage or cancel, so the Stripe Customer Portal route is removed. | n/a | n/a | UN-23 |
-| FR-47 | Webhook `POST /api/stripe/webhook`: the signature is verified on the raw body (400 otherwise); `checkout.session.completed` (when `payment_status` is not `unpaid`) and `checkout.session.async_payment_succeeded` mark the purchase paid once in `report_purchases`, then the PDF is built and emailed with Resend to the address of the parent who paid (from Supabase auth, never from client input), and `emailed_at` is set. A replayed event sends no second email. Without `RESEND_API_KEY` or `REPORT_FROM_EMAIL` the purchase is still recorded and a code is logged, never the address. | Should | A wrong or missing signature answers 400; a valid event marks paid and sends one email; a replay sends none (`apps/web/app/api/stripe/handlers.test.ts`, `supabase/tests/database/report_purchases.test.sql`). | UN-23 |
+| FR-47 | Webhook `POST /api/stripe/webhook`: the signature is verified on the raw body (400 otherwise); `checkout.session.completed` (only when `payment_status` is `paid` and the amount and currency are those of the configured price) and `checkout.session.async_payment_succeeded` mark the purchase paid once in `report_purchases`, then the PDF is built and emailed with Resend to the address of the parent who paid (from Supabase auth, never from client input), and `emailed_at` is set. A replayed event sends no second email. Without `RESEND_API_KEY` or a sender (`EMAIL_FROM`) the purchase is still recorded and a code is logged, never the address. | Should | A wrong or missing signature answers 400; a valid event marks paid and sends one email; a replay sends none (`apps/web/app/api/stripe/handlers.test.ts`, `supabase/tests/database/report_purchases.test.sql`). | UN-23 |
 | FR-48 | Gating (DECIDED, Hatem, 2026-10-20, D-05): everything is free for parents (games, result card, next step FR-33 to FR-35, missions, progress, data deletion) except downloading the parent report (`GET /api/reports/<sessionId>`, PDF). The report holds only what the result card shows: nickname, session date, the fixed headline and its supporting line, the fixed disclaimer, the game measures as game measures, the next step; no probability, severity or diagnosis wording. The download needs a paid purchase of that report by that parent (`report_purchases`, D-05b), checked on the server; the offer appears only in the report block under the result card. | Must | With no paid purchase, a parent sees the full result card and next step, and the download answers 402; with a paid purchase of that report it answers a PDF; another parent's session answers 404 even when its report is paid (`apps/web/app/api/reports/handlers.test.ts`, `apps/web/lib/report.test.ts`, `apps/web/app/parent/gating.test.ts`, `supabase/tests/database/report_access.test.sql`). | UN-19 |
 
 ### 4.5 Email notification
@@ -191,7 +191,7 @@ Open points from 06, not verified: the licence of the `face_landmarker.task` mod
 | ID | Requirement | Priority | Acceptance criterion | Traces to |
 |---|---|---|---|---|
 | FR-50 | Emails through Resend ("weekly summary" and "new mission"), carrying no scores, bands or indicators, only a link to the dashboard (03 section 7). | Should | A test email arrives; its body contains no band, indicator or flag text. | UN-24 |
-| FR-51 | Paid report email (D-05b, DECIDED, Hatem, 2026-10-20): sent once, only to the parent who paid, with the PDF attached; short and kind, in the parent's language when known (RO or EN, from the browser at checkout); the fixed headline and disclaimer in the body; no result data in the subject; no diagnosis, probability, severity or treatment wording. Sender: `REPORT_FROM_EMAIL`, on a domain verified in Resend (`onboarding@resend.dev` only delivers to the Resend account owner). Wording: placeholder until Person 4 approves. | Should | `apps/web/lib/report-email.test.ts`; webhook tests above. | UN-19, UN-24 |
+| FR-51 | Paid report email (D-05b, DECIDED, Hatem, 2026-10-20): sent once, only to the parent who paid, with the PDF attached; short and kind, in the parent's language when known (RO or EN, from the browser at checkout); the fixed headline and disclaimer in the body; no result data in the subject; no diagnosis, probability, severity or treatment wording. Sender: `EMAIL_FROM` (the one sender setting of every email), on a domain verified in Resend (`onboarding@resend.dev` only delivers to the Resend account owner). Wording: placeholder until Person 4 approves. | Should | `apps/web/lib/report-email.test.ts`; webhook tests above. | UN-19, UN-24 |
 
 ### 4.6 Admin and demo seeding
 
@@ -307,7 +307,7 @@ adhdcheck/
       app/play/[token]/        # mounts the Phaser game
       app/dashboard/           # parent: children, results, missions, billing
       app/api/sessions/        # POST session metrics -> validate -> score -> save
-      app/api/stripe/          # checkout, portal, webhook
+      app/api/stripe/          # checkout, webhook
   packages/
     game/                      # Phaser scenes, go/no-go engine, session recorder
     scoring/                   # pure TS: indicators, thresholds.v0.json, tests
@@ -335,7 +335,7 @@ adhdcheck/
  | apps/web route handlers (Vercel)                                     |
  |   validate (packages/contracts) -> score (packages/scoring)          |
  |   -> ScoreResult v1 -> save                                          |
- |   /api/stripe/* (Checkout, Portal, webhook)    Resend emails         |
+ |   /api/stripe/* (Checkout, webhook)            Resend emails         |
  +----------+-----------------------------------------------------------+
             |
             v

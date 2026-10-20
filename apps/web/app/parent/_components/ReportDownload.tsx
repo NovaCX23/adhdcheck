@@ -15,7 +15,7 @@ import { ErrorNote, buttonPrimary, buttonQuiet, postJson } from "./shell";
 const CONFIRM_POLLS = 10;
 const CONFIRM_EVERY_MS = 2000;
 
-export function ReportDownload({ sessionId }: { sessionId: string }) {
+export function ReportDownload({ sessionId, band }: { sessionId: string; band: string }) {
   const client = useMemo(() => createLazyClient(), []);
   const [view, setView] = useState<ReportView | "checking">("checking");
   const [busy, setBusy] = useState(false);
@@ -30,7 +30,7 @@ export function ReportDownload({ sessionId }: { sessionId: string }) {
       const purchase = await getReportPurchase(client, sessionId).catch(() => null);
       if (!live) return;
       // Back from checkout and not yet paid: keep the wait message (never the offer, so nobody pays twice).
-      const next = reportView(purchase, returning);
+      const next = reportView(purchase, returning, band);
       setView(next);
       if (next === "confirming" && left > 0) timer = setTimeout(() => void check(left - 1), CONFIRM_EVERY_MS);
     };
@@ -39,7 +39,7 @@ export function ReportDownload({ sessionId }: { sessionId: string }) {
       live = false;
       if (timer) clearTimeout(timer);
     };
-  }, [client, sessionId]);
+  }, [client, sessionId, band]);
 
   async function download() {
     setBusy(true);
@@ -67,12 +67,33 @@ export function ReportDownload({ sessionId }: { sessionId: string }) {
       window.location.assign(body.url);
       return;
     }
-    if (res?.status === 409) setView("paid");
+    // 409: a Checkout for this report was already paid or is being paid (late webhook, delayed payment).
+    if (res?.status === 409) setView(body?.error === "insufficient_data" ? "none" : "confirming");
     else setNote(S.billing.unavailable);
     setBusy(false);
   }
 
   if (view === "checking") return <p className="text-sm text-ink-muted">{S.report.checking}</p>;
+
+  if (view === "none") return null;
+
+  if (view === "in_progress") {
+    return (
+      <section aria-labelledby={`report-progress-${sessionId}`} className="space-y-3">
+        <p id={`report-progress-${sessionId}`} role="status" className="text-ink-muted">
+          {S.report.inProgress}
+        </p>
+        <button type="button" disabled={busy} onClick={buy} className={buttonQuiet}>
+          {busy ? S.report.buying : S.report.resume}
+        </button>
+        {note && (
+          <p role="status" className="text-sm text-ink-muted">
+            {note}
+          </p>
+        )}
+      </section>
+    );
+  }
 
   if (view === "confirming") {
     return (

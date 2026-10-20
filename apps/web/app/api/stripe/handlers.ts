@@ -31,15 +31,23 @@ export function langFromRequest(request: Request): EmailLang {
 }
 
 const Uuid = z.string().refine(isUuid);
+const CHECKOUT_BUCKET_MS = 30 * 60 * 1000;
 const CheckoutBody = z.strictObject({ sessionId: Uuid });
 
 export type CheckoutDeps = {
   getParentId(): Promise<string | null>;
   priceId: string | undefined;
-  // The session as the logged-in parent sees it (RLS): null for another parent's session.
-  getOwnSession(sessionId: string): Promise<{ childId: string; scored: boolean } | null>;
+  // SITE_URL: the public address of the site, the only source of the return URLs (never the request origin).
+  siteUrl: string | undefined;
+  // The session as the logged-in parent sees it (RLS): null for another parent's session. band is null
+  // while the session has no result.
+  getOwnSession(sessionId: string): Promise<{ childId: string; band: string | null } | null>;
   // Whether this parent already holds a paid purchase of this report.
   isPaid(sessionId: string): Promise<boolean>;
+  // Stripe Checkout Session ids of this parent's pending purchases of this report, newest first (RLS).
+  pendingCheckouts(sessionId: string): Promise<string[]>;
+  // What Stripe says an earlier Checkout Session became; null when Stripe does not know it.
+  retrieveCheckout(checkoutId: string): Promise<{ status: "open" | "complete" | "expired"; paymentStatus: string; url: string | null } | null>;
   createCheckoutSession(input: {
     priceId: string;
     parentId: string;
@@ -47,6 +55,8 @@ export type CheckoutDeps = {
     lang: EmailLang;
     successUrl: string;
     cancelUrl: string;
+    // Two requests for one report in the same half hour (two tabs) get the same Checkout Session from Stripe.
+    idempotencyKey: string;
   }): Promise<{ id: string; url: string | null }>;
   startPurchase(input: { parentId: string; sessionId: string; checkoutId: string; lang: EmailLang }): Promise<string>;
 };
@@ -65,18 +75,40 @@ export async function handleCheckout(request: Request, deps: CheckoutDeps): Prom
   if (!parsed.success) return fail(400, "invalid_request");
   const { sessionId } = parsed.data;
 
-  let own: { childId: string; scored: boolean } | null;
+  const siteUrl = deps.siteUrl?.trim().replace(/\/+$/, "");
+  if (!siteUrl) {
+    console.error("[stripe] checkout failed", { error: "billing_not_configured" });
+    return fail(503, "billing_not_configured");
+  }
+
+  let own: { childId: string; band: string | null } | null;
   try {
     own = await deps.getOwnSession(sessionId);
     if (!own) return fail(404, "unknown_session");
-    if (!own.scored) return fail(404, "not_scored");
+    if (own.band === null) return fail(404, "not_scored");
+    // A session with too little data has no result to report, so there is nothing to sell.
+    if (own.band === "insufficient_data") return fail(409, "insufficient_data");
     if (await deps.isPaid(sessionId)) return fail(409, "already_paid");
   } catch {
     console.error("[stripe] checkout failed", { error: "storage_unavailable" });
     return fail(503, "storage_unavailable");
   }
 
-  const origin = new URL(request.url).origin;
+  // An earlier Checkout for this report decides first (late webhook, delayed payment method, two tabs).
+  let existingUrl: string | null = null;
+  try {
+    for (const id of await deps.pendingCheckouts(sessionId)) {
+      const earlier = await deps.retrieveCheckout(id);
+      if (!earlier) continue;
+      if (earlier.status === "complete") return fail(409, earlier.paymentStatus === "paid" ? "already_paid" : "payment_pending");
+      if (earlier.status === "open" && earlier.url && !existingUrl) existingUrl = earlier.url;
+    }
+  } catch {
+    console.error("[stripe] checkout failed", { error: "billing_unavailable" });
+    return fail(502, "billing_unavailable");
+  }
+  if (existingUrl) return Response.json({ url: existingUrl });
+
   const lang = langFromRequest(request);
   try {
     const session = await deps.createCheckoutSession({
@@ -84,8 +116,9 @@ export async function handleCheckout(request: Request, deps: CheckoutDeps): Prom
       parentId,
       sessionId,
       lang,
-      successUrl: `${origin}/parent/${own.childId}?report=paid`,
-      cancelUrl: `${origin}/parent/${own.childId}`,
+      successUrl: `${siteUrl}/parent/${own.childId}?report=paid`,
+      cancelUrl: `${siteUrl}/parent/${own.childId}`,
+      idempotencyKey: `report-checkout/${parentId}/${sessionId}/${Math.floor(Date.now() / CHECKOUT_BUCKET_MS)}`,
     });
     if (!session.url) throw new Error("checkout session without url");
     // The webhook also records the purchase from the metadata, so a lost insert here loses nothing.
@@ -117,13 +150,16 @@ export type PaidOutcome = { outcome: string; emailed: boolean };
 export type WebhookDeps = {
   // Stripe signature check (stripe.webhooks.constructEvent with STRIPE_WEBHOOK_SECRET); throws when invalid.
   verify(payload: string, signature: string): Stripe.Event;
+  // The amount (smallest currency unit) and currency of the configured price, read from Stripe; throws when
+  // Stripe cannot say.
+  expectedPrice(): Promise<{ amount: number; currency: string }>;
   markPaid(input: { checkoutId: string; parentId: string; sessionId: string; lang: EmailLang }): Promise<PaidOutcome>;
   markEmailed(checkoutId: string): Promise<void>;
   // The email of the parent who paid, from Supabase auth (never from the request or Stripe).
   getParentEmail(parentId: string): Promise<string | null>;
   // The report PDF of that parent's session, or null when it cannot be built (not scored, deleted).
-  buildPdf(parentId: string, sessionId: string): Promise<{ bytes: Uint8Array; fileName: string; band: ReportBand; sessionDate: string } | null>;
-  // null when RESEND_API_KEY or REPORT_FROM_EMAIL is not set: the purchase is still recorded.
+  buildPdf(parentId: string, sessionId: string): Promise<{ bytes: Uint8Array; fileName: string; band: ReportBand | "insufficient_data"; sessionDate: string } | null>;
+  // null when RESEND_API_KEY or EMAIL_FROM is not set: the purchase is still recorded.
   mailer: Mailer | null;
 };
 
@@ -154,11 +190,22 @@ export async function handleWebhook(request: Request, deps: WebhookDeps): Promis
   if (!PAID_EVENTS.has(event.type)) return Response.json({ received: true });
   const checkout = event.data.object as Stripe.Checkout.Session;
   if (checkout.mode !== "payment") return Response.json({ received: true });
-  // A delayed payment method completes the checkout before the money arrives; async_payment_succeeded follows.
-  if (checkout.payment_status === "unpaid") return Response.json({ received: true });
+  // A delayed payment method completes the checkout before the money arrives (unpaid; async_payment_succeeded
+  // follows). Only "paid" counts: "no_payment_required" (a 100% coupon) is not a purchase of this report.
+  if (checkout.payment_status !== "paid") return Response.json({ received: true });
   const meta = Metadata.safeParse(checkout.metadata ?? {});
   if (!meta.success) return note("bad_metadata");
   const { parent_id: parentId, session_id: sessionId, lang } = meta.data;
+
+  try {
+    const expected = await deps.expectedPrice();
+    if (checkout.amount_total !== expected.amount || (checkout.currency ?? "").toLowerCase() !== expected.currency.toLowerCase()) {
+      return note("price_mismatch");
+    }
+  } catch {
+    console.error("[stripe] webhook failed", { error: "billing_unavailable" });
+    return fail(500, "billing_unavailable");
+  }
 
   let paid: PaidOutcome;
   try {
@@ -176,6 +223,8 @@ export async function handleWebhook(request: Request, deps: WebhookDeps): Promis
     if (!to) return note("no_parent_email");
     const pdf = await deps.buildPdf(parentId, sessionId);
     if (!pdf) return note("report_unavailable");
+    // Cannot be bought any more; a purchase made before that rule has a report but no email text.
+    if (pdf.band === "insufficient_data") return note("insufficient_data");
     const content = buildReportEmail({ lang, band: pdf.band, sessionDate: pdf.sessionDate });
     const sent = await deps.mailer.send({
       to,

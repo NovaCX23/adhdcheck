@@ -91,7 +91,7 @@ export function ResultCard({ result }: { result: SessionResult }) {
         </div>
       </div>
       <div className="border-t border-ink/10 px-5 py-4 sm:px-7">
-        <ReportDownload sessionId={result.session_id} />
+        <ReportDownload sessionId={result.session_id} band={score.band} />
       </div>
     </article>
   );

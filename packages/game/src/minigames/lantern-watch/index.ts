@@ -11,3 +11,5 @@ export {
 } from "./logic";
 export type { TaskConfig } from "./logic";
 export { TASK_VERSION, buildSessionMetrics, calibrationBlock, taskBlock } from "./session";
+export { LanternWatchRunner } from "./runner";
+export type { RunData } from "./runner";

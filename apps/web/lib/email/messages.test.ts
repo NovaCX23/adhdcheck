@@ -10,7 +10,9 @@ const all = [
   weeklySummaryEmail(DASHBOARD),
 ];
 
-describe("email messages (FR-50)", () => {
+// Scope: the FR-50 messages (waitlist, new mission, weekly summary) only. The paid report email (FR-51)
+// deliberately carries the headline of its own report (lib/report-email.test.ts).
+describe("FR-50 email messages", () => {
   it("never carry a result: no band, headline, indicator or score wording", () => {
     for (const m of all) {
       const text = `${m.subject}\n${m.text}\n${m.html}`;

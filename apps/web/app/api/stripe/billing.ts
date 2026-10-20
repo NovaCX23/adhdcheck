@@ -50,7 +50,9 @@ export async function getParentEmail(admin: SupabaseClient, parentId: string): P
     if (error.status === 404) return null;
     throw new Error(`read parent failed: ${error.message}`);
   }
-  return data.user?.email ?? null;
+  // Only an address the parent has confirmed: an unconfirmed sign-up could name someone else's mailbox.
+  if (!data.user?.email_confirmed_at) return null;
+  return data.user.email ?? null;
 }
 
 // The PDF of one session of one parent. The service role bypasses RLS, so every read is filtered on the
@@ -97,7 +99,12 @@ export function resendMailer(resend: Resend, from: string): Mailer {
           { idempotencyKey: mail.idempotencyKey },
         );
         if (!error) return { ok: true };
+        // 409 invalid_idempotent_request: the key was already used, so an earlier attempt of this email went
+        // out (a retry whose payload differs from the first). Treat it as sent.
+        if (error.name === "invalid_idempotent_request") return { ok: true };
         const status = error.statusCode ?? 0;
+        // 409 concurrent_idempotent_requests: the first attempt is still being processed; retry later.
+        if (error.name === "concurrent_idempotent_requests") return { ok: false, permanent: false };
         return { ok: false, permanent: status >= 400 && status < 500 && status !== 429 };
       } catch {
         return { ok: false, permanent: false };

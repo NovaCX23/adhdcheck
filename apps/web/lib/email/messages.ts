@@ -1,11 +1,8 @@
+import { escapeHtml } from "./escape-html";
 import { EMAIL_TEXT } from "./strings";
 
 // FR-50 email bodies, built from the fixed strings and, for parents, the dashboard link only.
 export type EmailMessage = { subject: string; text: string; html: string };
-
-function escapeHtml(value: string) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
 function withLink(subject: string, body: string, link: string): EmailMessage {
   const safe = escapeHtml(link);
