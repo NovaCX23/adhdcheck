@@ -31,3 +31,5 @@ export async function mountGame(parent: HTMLElement): Promise<GameHandle> {
 
   return { destroy: () => game.destroy(true) };
 }
+
+export * from "./minigames/bridge-wait";
