@@ -67,7 +67,7 @@ The names follow the usual convention of each provider; confirm them against the
 
 ## 5. Status of the stubs
 
-- The **waitlist** (`POST /api/waitlist`) is **not persisted yet**: it validates the address and returns `ok`; nothing is stored and no email is sent. The address is not logged either (only language and time). Storing it in Supabase is a TODO (Person 3).
+- The **waitlist** (`POST /api/waitlist`) stores the address (lower case, once) and the page language in the server-only `waitlist` table. No confirmation email is sent yet (Resend, TODO). The address is never logged (only language and time).
 - `scoreSession` returns `insufficient_data` for every session until Person 2 writes the rules. No thresholds exist yet.
 - The **demo seed** (`seed_demo`, used by Reset demo) writes synthetic scores in SQL, not scorer output, and its reason lines are placeholders until Person 4 supplies the text.
 - `/play` draws a blank "Luma" canvas. No game logic.
