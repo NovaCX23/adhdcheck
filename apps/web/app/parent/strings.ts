@@ -61,6 +61,15 @@ export const S = {
     failed: "Could not create a game link. Try again.",
     cancel: "Cancel",
   },
+  // NFR-04 consent to processing, asked once before the first game. Placeholder wording: TODO texts owner
+  // (docs/02 NFR-04 "Consent text: TODO"). When the final text lands, change PROCESSING_CONSENT_VERSION.
+  processing: {
+    title: "Before the first game",
+    explain:
+      "To show you a result, we keep what the game records while your child plays: taps and their timing, linked to the nickname and birth year you entered. Only you can see it, and deleting the child deletes all of it.",
+    agree: "I am this child's parent or legal guardian, and I agree to this.",
+    button: "Continue",
+  },
   // FR-70 consent, placeholder wording for the texts owner (shared-texts-claims-pitch.md, step 1).
   consent: {
     title: "Camera and microphone (optional)",

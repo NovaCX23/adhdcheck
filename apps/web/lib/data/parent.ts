@@ -1,6 +1,7 @@
 import { ScoreResultSchema, type ScoreResult } from "@adhdcheck/contracts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isMissionKey } from "../missions";
+import { PROCESSING_CONSENT_VERSION } from "../processing-consent";
 
 // Data for the parent pages (Person 4). Pass the logged-in parent's client (lib/supabase/server.ts in
 // Server Components, lib/supabase/client.ts in Client Components): RLS returns only their own rows.
@@ -109,6 +110,18 @@ export function onNewScore(client: SupabaseClient, onScore: (sessionId: string) 
   return () => {
     void client.removeChannel(channel);
   };
+}
+
+// NFR-04: whether the parent has agreed to the current consent text, and record that they do (RLS: the
+// row is always the caller's own, and cannot be changed afterwards). POST /api/play-links checks the same.
+export async function hasProcessingConsent(client: SupabaseClient): Promise<boolean> {
+  const result = await client.from("processing_consents").select("id").eq("version", PROCESSING_CONSENT_VERSION).limit(1);
+  return check<{ id: number }[]>(result, "read consent").length > 0;
+}
+
+export async function giveProcessingConsent(client: SupabaseClient): Promise<void> {
+  const result = await client.from("processing_consents").insert({ version: PROCESSING_CONSENT_VERSION });
+  check(result, "record consent");
 }
 
 // FR-45, FR-48: the parent's Stripe subscription status ("active", "trialing", "past_due", "canceled", ...),
