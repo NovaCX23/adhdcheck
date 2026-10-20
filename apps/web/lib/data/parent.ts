@@ -111,6 +111,13 @@ export function onNewScore(client: SupabaseClient, onScore: (sessionId: string) 
   };
 }
 
+// FR-45, FR-48: the parent's Stripe subscription status ("active", "trialing", "past_due", "canceled", ...),
+// or null before any checkout. Never gate the result card, next step or deletion on it.
+export async function getSubscriptionStatus(client: SupabaseClient): Promise<string | null> {
+  const result = await client.from("subscriptions").select("status").maybeSingle();
+  return check<{ status: string } | null>(result, "read subscription")?.status ?? null;
+}
+
 // FR-37: missions are always chosen by the parent; nothing here reads a score (NFR-52).
 export async function listMissions(client: SupabaseClient, childId: string): Promise<MissionRow[]> {
   const result = await client.from("missions").select(MISSION_COLUMNS).eq("child_id", childId).order("created_at");
