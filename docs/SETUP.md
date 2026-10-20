@@ -64,7 +64,7 @@ Copy `.env.example` to `apps/web/.env.local` (gitignored) and fill the values th
 | `RESEND_API_KEY` | server only: sends the paid report by email (FR-51). Optional: without it the purchase is still recorded and the parent downloads the report |
 | `REPORT_FROM_EMAIL` | server only: the sender of the report email, for example `ADHDCheck <reports@your-verified-domain>`. It must be on a domain verified in Resend: `onboarding@resend.dev` only delivers to the Resend account owner's own address (https://resend.com/docs/knowledge-base/403-error-resend-dev-domain). Optional, as above |
 | `DEMO_PARENT_EMAIL` | server only: the account that may use Reset demo (`POST /api/demo/reset`) |
-| `GAME_HARNESS` | server only: set to `1` to serve the dev game pages under `/play` (bridge-wait, star-path, treasure-choice, route-planner, wake-fireflies) in production; read at build, off by default |
+| `GAME_HARNESS` | server only: set to `1` to serve the dev game pages under `/play` (bridge-wait, star-path, treasure-choice, route-planner, wake-fireflies, lantern-watch) in production; read at build, off by default |
 
 The names follow the usual convention of each provider; confirm them against the provider quickstart when you wire the service.
 

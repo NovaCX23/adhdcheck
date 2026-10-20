@@ -37,3 +37,4 @@ export * from "./minigames/treasure-choice";
 export * from "./minigames/star-path";
 export * from "./minigames/route-planner";
 export * from "./minigames/wake-fireflies";
+export * from "./minigames/lantern-watch";
