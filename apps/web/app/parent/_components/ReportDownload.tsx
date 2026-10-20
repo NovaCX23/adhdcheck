@@ -8,7 +8,7 @@ import { reportView, viewAfterCheckoutConflict, type ReportView } from "./report
 import { ErrorNote, buttonPrimary, buttonQuiet, postJson } from "./shell";
 
 // D-05 and D-05b (DECIDED, Hatem, 2026-10-20): the detailed report is the only paid feature, 9.99 EUR, paid
-// once per report. After payment it is emailed to the parent who paid and stays downloadable here. The
+// once per report. After payment the parent who paid gets an email with a link to this page (R3-D1) and downloads it here. The
 // result and the next step above never depend on this block. The server checks payment itself
 // (GET /api/reports/<id> answers 402 without a paid purchase), so this block only chooses what to show.
 

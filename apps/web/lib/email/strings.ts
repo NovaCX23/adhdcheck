@@ -23,4 +23,16 @@ export const EMAIL_TEXT = {
     subject: "Your weekly summary is ready",
     body: "This week's games and missions are in your parent area. Open it here:",
   },
+  // R3-D1 (DECIDED, Hatem, 2026-10-20): the paid report is never attached or quoted; the email only says it is
+  // ready and links to it behind login. TODO (texts owner): approve the RO and EN wording of this email.
+  reportReady: {
+    en: {
+      subject: "Your detailed report is ready",
+      body: "Thank you. Your detailed report is ready in your parent area. Log in and open it here:",
+    },
+    ro: {
+      subject: "Raportul tău detaliat este gata",
+      body: "Mulțumim. Raportul tău detaliat este gata în spațiul tău de părinte. Autentifică-te și deschide-l aici:",
+    },
+  },
 } as const;

@@ -303,7 +303,8 @@ describe("LanternWatchRunner, a tap delivered after the frame that closed its tr
 
 describe("LanternWatchRunner, a late tap on the last trial of a calibration round that restarts (R4-1)", () => {
   // Round 1: nothing tapped on trials 1 to 9, the 10th is tapped inside its window but delivered 1.5 frames late.
-  // The round is already over with no hit, so it restarts; the late tap must not write into the new round.
+  // Since R5-1 the round waits for that tap, which is its only hit, so the round is kept; either way the tap
+  // must never write into a different round or leave an empty slot.
   let round1 = 0;
   const child: Child = (tr, onset) => {
     if (tr.phase === "calibration") {
@@ -334,5 +335,45 @@ describe("LanternWatchRunner, a late tap on the last trial of a calibration roun
         offTargetTaps: data.off_target_taps,
       }),
     ).not.toThrow();
+  });
+});
+
+describe("LanternWatchRunner, every tap stamped inside its window and delivered 1.5 frames late (R5-1)", () => {
+  // Every firefly tap of the calibration and of the task is stamped 5 ms before its window closes and reaches the
+  // page 1.5 frames after the frame that closed the trial. The trials that end a phase (the last calibration
+  // round, the last trial of each block, the last trial of the task) change the state in that same frame; the
+  // new state must not swallow the tap.
+  const everyLate: Child = (tr, onset) => {
+    if (tr.type === "nogo") return [];
+    if (tr.phase === "practice") return [{ t: onset + 400, lantern: tr.lantern }];
+    const window = tr.phase === "calibration" ? RESPONSE_WINDOW_MS : DEFAULT_TASK.stimulusMs + tr.isiMs;
+    return [{ t: onset + window - 5, lantern: tr.lantern, deliver: onset + window + FRAME * 1.5 }];
+  };
+  const { data } = sim({ child: everyLate });
+
+  it("loses no trial: every firefly trial of the calibration and the task has its response", () => {
+    expect(data.trials).toHaveLength(154);
+    const lost = data.trials.filter((t) => t.type !== "nogo" && !t.responded);
+    expect(lost.map((t) => t.i)).toEqual([]);
+  });
+
+  it("logs no off-target tap for them", () => {
+    expect(data.off_target_taps).toEqual([]);
+  });
+
+  it("does not restart a calibration round whose only hit is the late tap on its last trial", () => {
+    let n = 0;
+    const lastOnly: Child = (tr, onset) => {
+      if (tr.phase === "calibration") {
+        n += 1;
+        return n === 10 ? [{ t: onset + RESPONSE_WINDOW_MS - 5, lantern: tr.lantern, deliver: onset + RESPONSE_WINDOW_MS + FRAME * 1.5 }] : [];
+      }
+      return tr.type === "nogo" ? [] : [{ t: onset + 400, lantern: tr.lantern }];
+    };
+    const r = sim({ child: lastOnly });
+    expect(r.states.filter((s) => s.s === "calib")).toHaveLength(1);
+    const cal = r.data.trials.filter((t) => t.type === "calibration");
+    expect(cal).toHaveLength(10);
+    expect(cal[9]?.outcome).toBe("hit");
   });
 });

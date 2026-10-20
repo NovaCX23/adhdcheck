@@ -9,7 +9,6 @@ const MAIL: ReportMail = {
   subject: "s",
   text: "t",
   html: "<p>t</p>",
-  attachment: { filename: "r.pdf", content: new Uint8Array([1, 2, 3]) },
   idempotencyKey: "report-email/cs_test",
 };
 
@@ -39,6 +38,14 @@ describe("resendMailer (R3-P3)", () => {
   }
   it("accepts an accepted email", async () => {
     expect(await resendMailer(resendReturning(null).resend, "f@example.test").send(MAIL)).toEqual({ ok: true });
+  });
+  it("R3-D1 sends the message with its idempotency key and no attachment", async () => {
+    const { resend, send } = resendReturning(null);
+    await resendMailer(resend, "f@example.test").send(MAIL);
+    const [payload, options] = send.mock.calls[0] as [Record<string, unknown>, { idempotencyKey: string }];
+    expect(payload).not.toHaveProperty("attachments");
+    expect(payload).toMatchObject({ from: "f@example.test", to: ["parent@example.test"], subject: "s", text: "t", html: "<p>t</p>" });
+    expect(options).toEqual({ idempotencyKey: "report-email/cs_test" });
   });
   it("treats 409 invalid_idempotent_request as already sent (the first attempt went out)", async () => {
     const { resend } = resendReturning({ statusCode: 409, name: "invalid_idempotent_request" });

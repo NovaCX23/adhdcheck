@@ -1,5 +1,7 @@
 import Stripe from "stripe";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SCORE_DISCLAIMER } from "@adhdcheck/contracts";
+import { BAND_TEXT } from "../../parent/strings";
 import {
   handleCheckout,
   handleWebhook,
@@ -18,6 +20,7 @@ const CHILD = "00000000-0000-4000-8000-0000000000c1";
 const PRICE = "price_synthetic";
 const CHECKOUT = "cs_test_synthetic";
 const PARENT_EMAIL = "parent-a@example.test";
+const SITE = "https://site.example.test";
 // Synthetic signing value for the test only (a real one lives in STRIPE_WEBHOOK_SECRET).
 const SIGNING = "synthetic-signing-value";
 const stripe = new Stripe("unused-by-signature-checks");
@@ -42,6 +45,7 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
       own: { childId: string; band: string | null } | null;
       paid: boolean;
       pending: string[];
+      closed: string | null;
       retrieved: Record<string, Retrieved>;
     }> = {},
   ) {
@@ -52,6 +56,7 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
       own: { childId: CHILD, band: "no_flag" } as { childId: string; band: string | null } | null,
       paid: false,
       pending: [] as string[],
+      closed: null as string | null,
       retrieved: {} as Record<string, Retrieved>,
       ...o,
     };
@@ -61,6 +66,7 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
     const isPaid = vi.fn<CheckoutDeps["isPaid"]>().mockResolvedValue(c.paid);
     const pendingCheckouts = vi.fn<CheckoutDeps["pendingCheckouts"]>().mockResolvedValue(c.pending);
     const retrieveCheckout = vi.fn<CheckoutDeps["retrieveCheckout"]>(async (id) => c.retrieved[id] ?? null);
+    const latestClosedCheckout = vi.fn<CheckoutDeps["latestClosedCheckout"]>().mockResolvedValue(c.closed);
     const d: CheckoutDeps = {
       getParentId: async () => c.parentId,
       priceId: c.priceId,
@@ -68,11 +74,12 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
       getOwnSession,
       isPaid,
       pendingCheckouts,
+      latestClosedCheckout,
       retrieveCheckout,
       createCheckoutSession,
       startPurchase,
     };
-    return { d, createCheckoutSession, startPurchase, getOwnSession, isPaid, pendingCheckouts, retrieveCheckout };
+    return { d, createCheckoutSession, startPurchase, getOwnSession, isPaid, pendingCheckouts, retrieveCheckout, latestClosedCheckout };
   }
 
   it("creates a one-off payment checkout for this report, with the parent and session in metadata", async () => {
@@ -213,6 +220,35 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
     expect(a.createCheckoutSession.mock.calls[0]![0].idempotencyKey).toBe(b.createCheckoutSession.mock.calls[0]![0].idempotencyKey);
   });
 
+  // R5-3: Stripe replays the answer of a request whose idempotency key it has seen. After a delayed payment
+  // failed or a Checkout expired inside the same half hour, the same key would return the dead session.
+  it("R5-3 uses another idempotency key once an earlier checkout of this report failed or expired", async () => {
+    const before = deps();
+    const afterFirst = deps({ closed: "cs_expired_1" });
+    const afterSecond = deps({ closed: "cs_failed_2" });
+    for (const x of [before, afterFirst, afterSecond]) await handleCheckout(post("/api/stripe/checkout"), x.d);
+    const keys = [before, afterFirst, afterSecond].map((x) => x.createCheckoutSession.mock.calls[0]![0].idempotencyKey);
+    expect(new Set(keys).size).toBe(3);
+    expect(keys[1]).toContain("cs_expired_1");
+    expect(keys[1]).toContain(SESSION);
+  });
+
+  it("R5-3 still gives two tabs the same key while nothing new has closed", async () => {
+    const a = deps({ closed: "cs_expired_1" });
+    const b = deps({ closed: "cs_expired_1" });
+    await handleCheckout(post("/api/stripe/checkout"), a.d);
+    await handleCheckout(post("/api/stripe/checkout"), b.d);
+    expect(a.createCheckoutSession.mock.calls[0]![0].idempotencyKey).toBe(b.createCheckoutSession.mock.calls[0]![0].idempotencyKey);
+  });
+
+  it("R5-3 answers 503 and opens no checkout when the closed checkouts cannot be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { d, createCheckoutSession, latestClosedCheckout } = deps();
+    latestClosedCheckout.mockRejectedValue(new Error("db down"));
+    expect((await handleCheckout(post("/api/stripe/checkout"), d)).status).toBe(503);
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("R3-P2 answers 409 insufficient_data for a session with too little data, and opens no Checkout", async () => {
     const { d, createCheckoutSession } = deps({ own: { childId: CHILD, band: "insufficient_data" } });
     const res = await handleCheckout(post("/api/stripe/checkout"), d);
@@ -287,37 +323,46 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
       row.emailed = true;
     });
     const getParentEmail = vi.fn<WebhookDeps["getParentEmail"]>().mockResolvedValue(c.email);
-    const buildPdf = vi.fn<WebhookDeps["buildPdf"]>().mockResolvedValue({
-      bytes: new TextEncoder().encode("%PDF-synthetic"),
-      fileName: "report-2026-10-12.pdf",
-      band: "no_flag",
-      sessionDate: "2026-10-12T16:30:00.000Z",
-    });
+    const reportTarget = vi.fn<WebhookDeps["reportTarget"]>().mockResolvedValue({ childId: CHILD, band: "no_flag" });
+    const startPurchase = vi.fn<WebhookDeps["startPurchase"]>().mockResolvedValue("started");
     const send = vi.fn<(mail: ReportMail) => Promise<MailResult>>().mockResolvedValue(
       c.mailer === "permanent" ? { ok: false, permanent: true } : c.mailer === "transient" ? { ok: false, permanent: false } : { ok: true },
     );
     const verify = (payload: string, signature: string) => stripe.webhooks.constructEvent(payload, signature, SIGNING);
     const lineItemPrices = vi.fn<WebhookDeps["lineItemPrices"]>().mockResolvedValue([PRICE]);
     const markNotPaid = vi.fn<WebhookDeps["markNotPaid"]>().mockResolvedValue(undefined);
-    const d: WebhookDeps = { verify, priceId: PRICE, lineItemPrices, markNotPaid, markPaid, markEmailed, getParentEmail, buildPdf, mailer: c.mailer === "none" ? null : { send } };
-    return { d, row, markPaid, markEmailed, getParentEmail, buildPdf, send, lineItemPrices, markNotPaid };
+    const d: WebhookDeps = {
+      verify,
+      priceId: PRICE,
+      siteUrl: SITE,
+      lineItemPrices,
+      markNotPaid,
+      markPaid,
+      markEmailed,
+      startPurchase,
+      getParentEmail,
+      reportTarget,
+      mailer: c.mailer === "none" ? null : { send },
+    };
+    return { d, row, markPaid, markEmailed, getParentEmail, reportTarget, startPurchase, send, lineItemPrices, markNotPaid };
   }
 
   it.each(["checkout.session.completed", "checkout.session.async_payment_succeeded"])(
-    "on %s marks the purchase paid, emails the PDF to the paying parent's own address, and records emailed_at",
+    "on %s marks the purchase paid, emails a link to the paying parent's own address, and records emailed_at",
     async (type) => {
-      const { d, markPaid, send, markEmailed, getParentEmail, buildPdf } = deps();
+      const { d, markPaid, send, markEmailed, getParentEmail, reportTarget } = deps();
       const res = await handleWebhook(signed(event({ type })), d);
 
       expect(res.status).toBe(200);
       expect(markPaid).toHaveBeenCalledWith({ checkoutId: CHECKOUT, parentId: PARENT, sessionId: SESSION, lang: "en" });
       expect(getParentEmail).toHaveBeenCalledWith(PARENT);
-      expect(buildPdf).toHaveBeenCalledWith(PARENT, SESSION);
+      expect(reportTarget).toHaveBeenCalledWith(PARENT, SESSION);
       expect(send).toHaveBeenCalledTimes(1);
       const mail = send.mock.calls[0]![0];
       expect(mail.to).toBe(PARENT_EMAIL);
-      expect(mail.attachment.filename).toBe("report-2026-10-12.pdf");
-      expect(Buffer.from(mail.attachment.content).subarray(0, 5).toString("latin1")).toBe("%PDF-");
+      // R3-D1 (DECIDED, Hatem, 2026-10-20): a link behind login, never the file.
+      expect(mail).not.toHaveProperty("attachment");
+      expect(mail.text).toContain(`${SITE}/parent/${CHILD}?session=${SESSION}`);
       expect(mail.idempotencyKey).toBe(`report-email/${CHECKOUT}`);
       expect(markEmailed).toHaveBeenCalledWith(CHECKOUT);
     },
@@ -338,6 +383,33 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
     expect(res.status).toBe(200);
     expect(markPaid).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  // R5-4: when the row written at checkout start was lost (the insert is only logged on failure), a delayed
+  // payment method would leave no pending row and the parent could pay a second time.
+  it("R5-4 records a pending purchase from the metadata when the checkout completes unpaid", async () => {
+    const { d, startPurchase, markPaid, send } = deps();
+    expect((await handleWebhook(signed(event({ payment_status: "unpaid", metadata: { parent_id: PARENT, session_id: SESSION, lang: "ro" } })), d)).status).toBe(200);
+    expect(startPurchase).toHaveBeenCalledWith({ parentId: PARENT, sessionId: SESSION, checkoutId: CHECKOUT, lang: "ro" });
+    expect(markPaid).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("R5-4 does not record a pending purchase for bad metadata, a paid checkout or another event", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { d, startPurchase } = deps();
+    await handleWebhook(signed(event({ payment_status: "unpaid", metadata: { parent_id: "x", session_id: SESSION } })), d);
+    await handleWebhook(signed(event({ payment_status: "paid" })), d);
+    await handleWebhook(signed(event({ type: "checkout.session.async_payment_failed", payment_status: "unpaid" })), d);
+    await handleWebhook(signed(event({ mode: "subscription", payment_status: "unpaid" })), d);
+    expect(startPurchase).not.toHaveBeenCalled();
+  });
+
+  it("R5-4 answers 500 so Stripe retries when the pending purchase cannot be recorded", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { d, startPurchase } = deps();
+    startPurchase.mockRejectedValue(new Error("db down"));
+    expect((await handleWebhook(signed(event({ payment_status: "unpaid" })), d)).status).toBe(500);
   });
 
   it("ignores a checkout that is not a one-off payment", async () => {
@@ -528,6 +600,7 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
         isPaid: async () => false,
         // what listPendingCheckoutIds returns: pending rows only
         pendingCheckouts: async () => rows.filter((r) => r.status === "pending").map((r) => r.id),
+        latestClosedCheckout: async () => rows.filter((r) => r.status !== "pending").at(-1)?.id ?? null,
         // Stripe still reports the delayed payment as complete and unpaid
         retrieveCheckout: async () => ({ status: "complete", paymentStatus: "unpaid", url: null }),
         createCheckoutSession,
@@ -544,19 +617,39 @@ describe("POST /api/stripe/webhook (FR-47, D-05b)", () => {
 
   it("R3-P2 sends no email for a legacy paid purchase whose session has too little data", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { d, buildPdf, send } = deps();
-    buildPdf.mockResolvedValue({ bytes: new Uint8Array([1]), fileName: "r.pdf", band: "insufficient_data", sessionDate: "2026-10-12T16:30:00.000Z" });
+    const { d, reportTarget, send } = deps();
+    reportTarget.mockResolvedValue({ childId: CHILD, band: "insufficient_data" });
     expect((await handleWebhook(signed(event()), d)).status).toBe(200);
     expect(send).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith("[stripe] webhook", { outcome: "insufficient_data" });
   });
 
-  it("writes a short, kind email with no result data in the subject, the headline and disclaimer in the body, and the PDF attached", async () => {
+  it("logs a code and sends nothing when the report cannot be found, or the site URL is not configured", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const a = deps();
+    a.reportTarget.mockResolvedValue(null);
+    expect((await handleWebhook(signed(event()), a.d)).status).toBe(200);
+    expect(warn).toHaveBeenCalledWith("[stripe] webhook", { outcome: "report_unavailable" });
+    const b = deps();
+    expect((await handleWebhook(signed(event()), { ...b.d, siteUrl: undefined })).status).toBe(200);
+    expect(warn).toHaveBeenCalledWith("[stripe] webhook", { outcome: "site_url_not_configured" });
+    expect(a.send).not.toHaveBeenCalled();
+    expect(b.send).not.toHaveBeenCalled();
+  });
+
+  // R3-D1 (DECIDED, Hatem, 2026-10-20), option A: the child's data never leaves the app. The email holds fixed
+  // text and a link to the page behind login; no PDF, no nickname, no headline, no band, no disclaimer.
+  it.each(["en", "ro"] as const)("R3-D1 (%s) sends fixed text and one link behind login, with nothing of the child or the report", async (lang) => {
     const { d, send } = deps();
-    await handleWebhook(signed(event()), d);
+    await handleWebhook(signed(event({ metadata: { parent_id: PARENT, session_id: SESSION, lang } })), d);
     const mail = send.mock.calls[0]![0];
-    expect(mail.subject).not.toMatch(/follow-up|assessment|recommended|no specific|not enough|ADHD/i);
-    expect(mail.text).toContain("No specific follow-up indicated by this activity");
-    expect(mail.text).toContain("Not a diagnosis");
+    const all = `${mail.subject}\n${mail.text}\n${mail.html}`;
+    const link = `${SITE}/parent/${CHILD}?session=${SESSION}`;
+    expect(Object.keys(mail).sort()).toEqual(["html", "idempotencyKey", "subject", "text", "to"]);
+    expect([...new Set(all.match(/https?:\/\/[^\s"<]+/g))]).toEqual([link]);
+    expect(all).not.toMatch(/follow-up|no specific|Not a diagnosis|nu este un diagnostic|recomand|indicator|score|band|\.pdf|nickname/i);
+    expect(all).not.toContain(SCORE_DISCLAIMER);
+    for (const b of ["follow_up_suggested", "no_flag", "insufficient_data"] as const) expect(all).not.toContain(BAND_TEXT[b].headline);
+    expect(all).not.toContain(String.fromCharCode(0x2014));
   });
 });
