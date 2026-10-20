@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SCORE_DISCLAIMER } from "@adhdcheck/contracts";
 import { BAND_TEXT } from "../../parent/strings";
 import {
+  checkoutIdempotencyKey,
   handleCheckout,
   handleWebhook,
   type CheckoutDeps,
@@ -263,9 +264,35 @@ describe("POST /api/stripe/checkout (FR-45, D-05b one-off payment per report)", 
 
   it("R7-3 puts neither the parent id, nor the report id, nor an email in the key", async () => {
     const key = await keyOf({ closed: "cs_expired_1" }, "ro");
-    for (const secret of [PARENT, SESSION, CHILD, PARENT_EMAIL, "example.test"]) expect(key).not.toContain(secret);
+    for (const clear of [PARENT, SESSION, CHILD, PARENT_EMAIL, "example.test"]) expect(key).not.toContain(clear);
     expect(key).toMatch(/^report-checkout\/[A-Za-z0-9/_-]+$/);
     expect(key.length).toBeLessThanOrEqual(255);
+  });
+
+  // R7-5: every field of the hash must matter, so removing one from the hash fails a test.
+  it("R7-5 changes the key when any single input changes, and not otherwise", () => {
+    const base = { priceId: "p", parentId: "a", sessionId: "s", lang: "en" as const, successUrl: "u1", cancelUrl: "u2", bucket: 5, closedId: null as string | null };
+    const k = checkoutIdempotencyKey(base);
+    expect(checkoutIdempotencyKey({ ...base })).toBe(k);
+    const changed = [
+      { priceId: "p2" },
+      { parentId: "a2" },
+      { sessionId: "s2" },
+      { lang: "ro" as const },
+      { successUrl: "u1b" },
+      { cancelUrl: "u2b" },
+      { bucket: 6 },
+      { closedId: "cs_x" },
+    ];
+    for (const c of changed) expect(checkoutIdempotencyKey({ ...base, ...c }), JSON.stringify(c)).not.toBe(k);
+  });
+
+  it("R7-5 gives two reports of one child, same language, same half hour, different keys", async () => {
+    const a = deps();
+    const b = deps();
+    await handleCheckout(post("/api/stripe/checkout", { sessionId: SESSION }), a.d);
+    await handleCheckout(post("/api/stripe/checkout", { sessionId: "4f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b" }), b.d);
+    expect(a.createCheckoutSession.mock.calls[0]![0].idempotencyKey).not.toBe(b.createCheckoutSession.mock.calls[0]![0].idempotencyKey);
   });
 
   it("R5-3 answers 503 and opens no checkout when the closed checkouts cannot be read", async () => {

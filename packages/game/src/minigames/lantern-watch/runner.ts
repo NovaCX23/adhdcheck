@@ -114,6 +114,8 @@ export class LanternWatchRunner {
   // End of the wait for a late tap: at the end of a calibration round without a hit, and at the end of the task.
   private settleUntil: number | null = null;
   private finishAt: number | null = null;
+  // End of the window of the last trial while finishAt is set: only taps stamped after it are the wait's own (R7-1).
+  private finishWindowEnd = 0;
 
   constructor(cfg: RunnerConfig, hooks: RunnerHooks = {}) {
     this.task = cfg.task;
@@ -189,8 +191,9 @@ export class LanternWatchRunner {
             return "response";
           }
         }
-        // finishAt !== null: the wait after the last trial, no trial is current, so a stray tap is not an ISI tap (R7-1)
-        if (this.measured() && tMs >= this.t0 && this.finishAt === null) {
+        // R7-1: in the wait after the last trial (finishAt set) a tap stamped after that trial's window is not an ISI tap;
+        // one stamped inside the window but delivered late still is.
+        if (this.measured() && tMs >= this.t0 && !(this.finishAt !== null && tMs >= this.finishWindowEnd)) {
           const visible = !!c && c.onset !== null && tMs >= c.onset && (c.hiddenAt === null || tMs < c.hiddenAt);
           this.offTarget.push({ t_ms: tMs - this.t0, during: visible ? "stimulus" : "isi" });
           return "off-target";
@@ -360,6 +363,7 @@ export class LanternWatchRunner {
         this.setState("break", ts);
       } else if (this.lastClosed) {
         this.finishAt = ts + LATE_TAP_GRACE_MS; // the last trial may still receive a late tap
+        this.finishWindowEnd = (this.lastClosed.trial.onset as number) + this.lastClosed.windowMs;
       } else {
         this.complete(ts);
       }

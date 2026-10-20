@@ -460,9 +460,24 @@ describe("LanternWatchRunner, a stray tap in the wait after the last trial (R7-1
     expect(tapped.data.duration_ms).toBe(base.data.duration_ms);
   });
 
+  it("R7-1b a real tap stamped inside the last window but delivered after it closed is still recorded", () => {
+    const late: Child = (tr, onset) => {
+      if (tr.type === "nogo") return [];
+      if (tr.phase === "task" && tr.taskIndex === LAST_INDEX) {
+        const window = DEFAULT_TASK.stimulusMs + tr.isiMs;
+        return [{ t: onset + window - 5, lantern: null, deliver: onset + window + FRAME * 1.5 }];
+      }
+      return [{ t: onset + 400, lantern: tr.lantern }];
+    };
+    const base = sim({ seed: GO_SEED, child: quietLast(false) });
+    const r = sim({ seed: GO_SEED, child: late });
+    expect(r.data.off_target_taps).toHaveLength(base.data.off_target_taps.length + 1);
+    expect(r.data.duration_ms).toBe(base.data.duration_ms);
+  });
+
   it("R7-1 control: a tap in an ordinary ISI of the task is still recorded as off-target", () => {
     const child: Child = (tr, onset) => {
-      const out = tr.type === "nogo" ? [] : [{ t: onset + 400, lantern: tr.lantern }];
+      const out: ReturnType<Child> = tr.type === "nogo" ? [] : [{ t: onset + 400, lantern: tr.lantern }];
       if (tr.phase === "task" && tr.taskIndex === 3) out.push({ t: onset + DEFAULT_TASK.stimulusMs + 100, lantern: null });
       return out;
     };
