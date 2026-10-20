@@ -55,7 +55,7 @@ const easeInOut = (t: number) => {
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 };
 
-class Particles {
+export class Particles {
   readonly points: Points;
   private readonly pos: Float32Array;
   private readonly col: Float32Array;

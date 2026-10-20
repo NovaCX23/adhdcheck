@@ -34,3 +34,4 @@ export async function mountGame(parent: HTMLElement): Promise<GameHandle> {
 
 export * from "./minigames/bridge-wait";
 export * from "./minigames/treasure-choice";
+export * from "./minigames/star-path";
