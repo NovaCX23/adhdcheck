@@ -2,21 +2,25 @@ import { describe, expect, it } from "vitest";
 import { ScoreResultSchema, type SessionMetrics } from "@adhdcheck/contracts";
 import { validScoreResult } from "../../../../../packages/contracts/src/fixtures/score-result.valid";
 import { validSessionMetrics } from "../../../../../packages/contracts/src/fixtures/session-metrics.valid";
-import type { UploadResult } from "../../../lib/play-client";
+import type { Consent, UploadResult } from "../../../lib/play-client";
 import { runPlayFlow, type FlowDeps, type Screen } from "./flow";
 
 const CHILD = "7d9e0a1b-2c3d-4e5f-8a9b-0c1d2e3f4a5b";
+const OFF: Consent = { camera: false, microphone: false };
 const metrics = validSessionMetrics as SessionMetrics;
 const saved: UploadResult = { status: "saved", score: ScoreResultSchema.parse(validScoreResult) };
 
 function setup(over: Partial<FlowDeps> & { uploads?: UploadResult[] } = {}) {
   const screens: Screen["kind"][] = [];
   const calls = { upload: 0, play: 0, network: 0 };
+  const played: Consent[] = [];
+  const ready: Screen[] = [];
   const uploads = over.uploads ?? [saved];
   const deps: FlowDeps = {
-    resolve: async () => ({ child_id: CHILD }),
-    play: async (childId) => {
+    resolve: async () => ({ child_id: CHILD, consent: OFF }),
+    play: async (childId, consent) => {
       calls.play += 1;
+      played.push(consent);
       expect(childId).toBe(CHILD);
       return metrics;
     },
@@ -29,11 +33,31 @@ function setup(over: Partial<FlowDeps> & { uploads?: UploadResult[] } = {}) {
     waitForNetwork: async () => {
       calls.network += 1;
     },
-    show: (s) => screens.push(s.kind),
+    show: (s) => {
+      screens.push(s.kind);
+      if (s.kind === "ready") ready.push(s);
+    },
     ...over,
   };
-  return { deps, screens, calls };
+  return { deps, screens, calls, played, ready };
 }
+
+describe("runPlayFlow, camera and microphone choices (FR-70)", () => {
+  it("hands the game both sensors off when the parent switched nothing on", async () => {
+    const { deps, played, ready } = setup();
+    await runPlayFlow("code-1", deps);
+    expect(played).toEqual([OFF]);
+    expect(ready).toEqual([{ kind: "ready", consent: OFF }]);
+  });
+
+  it("hands the game exactly the parent's choice, and the start screen shows it for the explanation", async () => {
+    const consent = { camera: false, microphone: true };
+    const { deps, played, ready } = setup({ resolve: async () => ({ child_id: CHILD, consent }) });
+    await runPlayFlow("code-1", deps);
+    expect(played).toEqual([consent]);
+    expect(ready).toEqual([{ kind: "ready", consent }]);
+  });
+});
 
 describe("runPlayFlow", () => {
   it("checks the link, waits for the start tap, plays, uploads and ends on a calm screen", async () => {

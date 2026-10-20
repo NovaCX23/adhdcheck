@@ -6,9 +6,11 @@ const PARENT = "00000000-0000-4000-8000-00000000000a";
 const CHILD = "00000000-0000-4000-8000-0000000000ca";
 const NOW = new Date("2026-10-20T10:00:00Z");
 
-function fakeStore({ issued = true, childId = CHILD as string | null } = {}) {
+const OFF = { camera: false, microphone: false };
+
+function fakeStore({ issued = true, childId = CHILD as string | null, consent = OFF } = {}) {
   const issue = vi.fn().mockResolvedValue(issued);
-  const resolve = vi.fn().mockResolvedValue(childId);
+  const resolve = vi.fn().mockResolvedValue(childId ? { childId, consent } : null);
   return { store: { issue, resolve } satisfies PlayLinkStore, issue, resolve };
 }
 
@@ -37,7 +39,17 @@ describe("POST /api/play-links (FR-01, FR-32)", () => {
       childId: CHILD,
       codeHash: hashPlayCode(body.code),
       expiresAt: new Date(NOW.getTime() + PLAY_LINK_LIFETIME_MS),
+      consent: OFF,
     });
+  });
+
+  it("FR-70: stores the parent's camera and microphone choices, off when not sent", async () => {
+    const { store, issue } = fakeStore();
+    await create({ child_id: CHILD, camera: false, microphone: true }, store);
+    expect(issue.mock.calls[0][0].consent).toEqual({ camera: false, microphone: true });
+
+    await create({ child_id: CHILD, camera: true }, store);
+    expect(issue.mock.calls[1][0].consent).toEqual({ camera: true, microphone: false });
   });
 
   it("answers 401 when no parent is logged in", async () => {
@@ -57,7 +69,7 @@ describe("POST /api/play-links (FR-01, FR-32)", () => {
     expect(await res.json()).toEqual({ error: "unknown_child" });
   });
 
-  it.each([[{}], [{ child_id: "not-a-uuid" }], [{ child_id: CHILD, extra: 1 }]])("answers 400 for body %j", async (body) => {
+  it.each([[{}], [{ child_id: "not-a-uuid" }], [{ child_id: CHILD, extra: 1 }], [{ child_id: CHILD, camera: "yes" }], [{ child_id: CHILD, microphone: 1 }], [{ child_id: CHILD, camera: null }]])("answers 400 for body %j", async (body) => {
     const { store, issue } = fakeStore();
     const res = await create(body, store);
 
@@ -85,13 +97,13 @@ describe("POST /api/play-links (FR-01, FR-32)", () => {
 });
 
 describe("GET /api/play-links/[code] (FR-01)", () => {
-  it("answers the child_id of a valid play link, looked up by hash", async () => {
-    const { store, resolve } = fakeStore();
+  it("answers the child_id and the parent's camera and microphone choices (FR-70), looked up by hash", async () => {
+    const { store, resolve } = fakeStore({ consent: { camera: true, microphone: false } });
     const { code, codeHash } = newPlayCode();
     const res = await handleResolvePlayLink(code, { store });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ child_id: CHILD });
+    expect(await res.json()).toEqual({ child_id: CHILD, consent: { camera: true, microphone: false } });
     expect(resolve).toHaveBeenCalledWith(codeHash);
   });
 

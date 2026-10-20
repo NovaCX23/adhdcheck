@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type Ref } from "react";
-import { resolvePlayLink, uploadSession } from "@/lib/play-client";
+import { resolvePlayLink, uploadSession, type Consent } from "@/lib/play-client";
 import { runPlayFlow, type Screen } from "./flow";
 import { sessionGame } from "./game";
 import { PLAY_STRINGS } from "./strings";
@@ -45,10 +45,10 @@ export function PlayLinkClient({ code }: { code: string }) {
     void runPlayFlow(code, {
       resolve: (c) => resolvePlayLink(c),
       play: game
-        ? (childId) => {
+        ? (childId, consent) => {
             const el = gameRef.current;
             if (!el) throw new Error("game container missing");
-            return game(el, childId);
+            return game(el, childId, consent);
           }
         : null,
       waitForStart: () => new Promise<void>((resolve) => (startRef.current = resolve)),
@@ -59,6 +59,14 @@ export function PlayLinkClient({ code }: { code: string }) {
   }, [code]);
 
   return <PlayScreen screen={screen} gameRef={gameRef} onStart={() => startRef.current()} />;
+}
+
+// FR-70: the child-friendly explanation, shown only when the parent switched a sensor on.
+function sensorLine(consent: Consent): string | null {
+  if (consent.camera && consent.microphone) return PLAY_STRINGS.sensorsBoth;
+  if (consent.camera) return PLAY_STRINGS.sensorsCamera;
+  if (consent.microphone) return PLAY_STRINGS.sensorsMicrophone;
+  return null;
 }
 
 // The night-sky screen around the game. Also the Suspense fallback of the page (screen "checking").
@@ -81,6 +89,11 @@ export function PlayScreen({
           <p aria-live="polite" className="max-w-[22ch] text-[clamp(22px,4vw,34px)] leading-snug font-semibold">
             {PLAY_STRINGS[screen.kind]}
           </p>
+          {screen.kind === "ready" && sensorLine(screen.consent) && (
+            <p className="-mt-4 max-w-[30ch] rounded-2xl bg-[#fffdf7]/10 px-5 py-3 text-[clamp(17px,2.6vw,22px)] leading-snug">
+              {sensorLine(screen.consent)}
+            </p>
+          )}
           {screen.kind === "ready" && (
             <button
               type="button"

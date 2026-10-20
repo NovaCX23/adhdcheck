@@ -4,9 +4,11 @@ import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSessionResult, onNewScore, type SessionResult } from "@/lib/data/parent";
-import { createPlayLink } from "@/lib/play-client";
+import { createPlayLink, type Consent } from "@/lib/play-client";
 import { S } from "../strings";
 import { buttonPrimary, buttonQuiet } from "./shell";
+
+const CONSENT_OFF: Consent = { camera: false, microphone: false };
 
 // FR-32 start a session: a single-use play link and its QR code for the tablet. FR-39: the result arrives
 // without a refresh. The subscription starts before the link exists (Realtime can miss the first
@@ -25,6 +27,8 @@ export function StartSession({
   const [link, setLink] = useState<{ url: string; expires_at: string; svg: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  // FR-70: both off until the parent switches one on, again for every new link.
+  const [consent, setConsent] = useState<Consent>(CONSENT_OFF);
   const known = useRef(new Set(knownSessions));
   const onResultRef = useRef(onResult);
   useEffect(() => {
@@ -41,6 +45,7 @@ export function StartSession({
       done = true;
       known.current.add(sessionId);
       setLink(null);
+      setConsent(CONSENT_OFF);
       onResultRef.current(result);
     };
     const stop = onNewScore(client, (id) => void deliver(id));
@@ -59,7 +64,7 @@ export function StartSession({
     setBusy(true);
     setFailed(false);
     try {
-      const created = await createPlayLink(childId);
+      const created = await createPlayLink(childId, { consent });
       const svg = await QRCode.toString(created.url, { type: "svg", margin: 1, errorCorrectionLevel: "M" });
       setLink({ url: created.url, expires_at: created.expires_at, svg });
     } catch {
@@ -71,7 +76,19 @@ export function StartSession({
 
   if (!link)
     return (
-      <div className="flex flex-col items-start gap-3">
+      <div className="flex flex-col items-start gap-4">
+        <fieldset className="w-full rounded-xl border border-ink/10 p-4">
+          <legend className="px-1 font-semibold">{S.consent.title}</legend>
+          <p className="max-w-prose text-sm text-ink-muted">{S.consent.explain}</p>
+          <div className="mt-3 space-y-1">
+            <Toggle label={S.consent.camera} on={consent.camera} onChange={(camera) => setConsent({ ...consent, camera })} />
+            <Toggle
+              label={S.consent.microphone}
+              on={consent.microphone}
+              onChange={(microphone) => setConsent({ ...consent, microphone })}
+            />
+          </div>
+        </fieldset>
         <button type="button" onClick={start} disabled={busy} className={buttonPrimary}>
           {S.session.start}
         </button>
@@ -102,10 +119,38 @@ export function StartSession({
         <p className="text-sm text-ink-muted">
           {S.session.expires} {time}.
         </p>
-        <button type="button" onClick={() => setLink(null)} className={buttonQuiet}>
+        <button
+          type="button"
+          onClick={() => {
+            setLink(null);
+            setConsent(CONSENT_OFF);
+          }}
+          className={buttonQuiet}
+        >
           {S.session.cancel}
         </button>
       </div>
     </div>
+  );
+}
+
+// An on/off switch with a visible state word, not colour alone (NFR-31 spirit for the parent too).
+function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      className="flex min-h-11 w-full items-center justify-between gap-4 rounded-lg px-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+    >
+      <span>{label}</span>
+      <span className="flex items-center gap-2 text-sm font-semibold text-ink-muted">
+        {on ? S.consent.on : S.consent.off}
+        <span aria-hidden="true" className={`relative h-7 w-12 rounded-full transition-colors ${on ? "bg-night-3" : "bg-ink/20"}`}>
+          <span className={`absolute top-1 size-5 rounded-full bg-white shadow transition-[left] ${on ? "left-6" : "left-1"}`} />
+        </span>
+      </span>
+    </button>
   );
 }

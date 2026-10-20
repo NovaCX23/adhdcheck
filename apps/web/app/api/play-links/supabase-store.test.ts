@@ -12,10 +12,11 @@ function fakeClient(result: { data: unknown; error: { message: string } | null }
 }
 
 describe("SupabasePlayLinkStore", () => {
-  it("issues through issue_play_link with the parent, the child, the hash and the expiry", async () => {
+  it("issues through issue_play_link with the parent, the child, the hash, the expiry and the choices", async () => {
     const { client, rpc } = fakeClient({ data: true, error: null });
     const expiresAt = new Date("2026-10-20T11:00:00Z");
-    const issued = await createSupabasePlayLinkStore(client).issue({ parentId: PARENT, childId: CHILD, codeHash, expiresAt });
+    const consent = { camera: false, microphone: true };
+    const issued = await createSupabasePlayLinkStore(client).issue({ parentId: PARENT, childId: CHILD, codeHash, expiresAt, consent });
 
     expect(issued).toBe(true);
     expect(rpc).toHaveBeenCalledWith("issue_play_link", {
@@ -23,21 +24,27 @@ describe("SupabasePlayLinkStore", () => {
       p_child_id: CHILD,
       p_code_hash: codeHash,
       p_expires_at: "2026-10-20T11:00:00.000Z",
+      p_allow_camera: false,
+      p_allow_microphone: true,
     });
   });
 
   it("answers false when the child is not the parent's", async () => {
     const { client } = fakeClient({ data: false, error: null });
     const expiresAt = new Date();
-    expect(await createSupabasePlayLinkStore(client).issue({ parentId: PARENT, childId: CHILD, codeHash, expiresAt })).toBe(false);
+    const consent = { camera: false, microphone: false };
+    expect(await createSupabasePlayLinkStore(client).issue({ parentId: PARENT, childId: CHILD, codeHash, expiresAt, consent })).toBe(false);
   });
 
-  it("resolves through resolve_play_link and answers the child_id or null", async () => {
-    const found = fakeClient({ data: CHILD, error: null });
-    expect(await createSupabasePlayLinkStore(found.client).resolve(codeHash)).toBe(CHILD);
+  it("resolves through resolve_play_link and answers the child and the choices, or null", async () => {
+    const found = fakeClient({ data: [{ child_id: CHILD, allow_camera: true, allow_microphone: false }], error: null });
+    expect(await createSupabasePlayLinkStore(found.client).resolve(codeHash)).toEqual({
+      childId: CHILD,
+      consent: { camera: true, microphone: false },
+    });
     expect(found.rpc).toHaveBeenCalledWith("resolve_play_link", { p_code_hash: codeHash });
 
-    const missing = fakeClient({ data: null, error: null });
+    const missing = fakeClient({ data: [], error: null });
     expect(await createSupabasePlayLinkStore(missing.client).resolve(codeHash)).toBeNull();
   });
 

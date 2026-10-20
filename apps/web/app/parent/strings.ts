@@ -61,6 +61,16 @@ export const S = {
     failed: "Could not create a game link. Try again.",
     cancel: "Cancel",
   },
+  // FR-70 consent, placeholder wording for the texts owner (shared-texts-claims-pitch.md, step 1).
+  consent: {
+    title: "Camera and microphone (optional)",
+    explain:
+      "The game works the same with both off. If you switch one on, the tablet only counts simple things, like whether your child is looking at the screen or how noisy the room is. No photo, video or sound is kept or sent.",
+    camera: "Camera",
+    microphone: "Microphone",
+    on: "On",
+    off: "Off",
+  },
   result: {
     title: "Result",
     of: "Game of",
