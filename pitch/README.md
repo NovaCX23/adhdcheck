@@ -16,7 +16,27 @@ Pitch rules (trainer briefing, `docs/pitch-briefing-2026-10-20.md`): deck due **
 | 6 | Impact and validation | Separates what works from what is unproven |
 | 7 | Delivery and risks | Privacy, claims, expected class IIa |
 | 8 | Team and ask | Ask: a clinical partner for a validation pilot |
-| A1 to A3 | Appendix | Stakeholders, costs, Sources (use for questions) |
+| A1 to A4 | Appendix | Stakeholders, target customers and go-to-market, costs, Sources (use for questions) |
+
+## Target customers (ICP) and go-to-market
+
+Team decision, 20 Oct 2026 (slide 7 and appendix A2).
+
+Target customers:
+
+1. Parents of children aged 6 to 12.
+2. ADHD associations in each country we advertise in.
+3. Teachers, who notice attention problems in class.
+4. Nurses: children play the game in the waiting room before the visit, so the doctor gets a first orientation and saves time.
+5. GPs (general practitioners): a first orientation before referral.
+
+Go-to-market:
+
+1. Contact the Romanian ADHD associations and the leading doctors on ADHD in Romania (key opinion leaders).
+2. Co-develop and keep improving the app with them.
+3. Their validation drives adoption.
+4. Develop under a quality management system per ISO 13485.
+5. CE marking under EU MDR as a class IIa medical device (expected, Rule 11), for the European market.
 
 ## The team must fill before 14:45
 
