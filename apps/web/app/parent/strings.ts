@@ -46,10 +46,16 @@ export const S = {
   billing: {
     title: "Family plan",
     active: "Your plan is active.",
-    inactive: "Missions and progress tracking come with the family plan. Results and next steps are always free.",
     subscribe: "Subscribe (test mode)",
     manage: "Manage plan",
     unavailable: "Billing is not set up yet.",
+  },
+  // D-05 (DECIDED, Hatem, 2026-10-20): only the report download is paid. Placeholder wording for the
+  // texts owner (shared-texts-claims-pitch.md).
+  report: {
+    download: "Download the report (PDF)",
+    preparing: "Preparing the report…",
+    paywall: "Downloading the report comes with the family plan. The result, the next step, missions and progress stay free.",
   },
   session: {
     title: "Play a game",
@@ -60,6 +66,15 @@ export const S = {
     newResult: "New result",
     failed: "Could not create a game link. Try again.",
     cancel: "Cancel",
+  },
+  // NFR-04 consent to processing, asked once before the first game. Placeholder wording: TODO texts owner
+  // (docs/02 NFR-04 "Consent text: TODO"). When the final text lands, change PROCESSING_CONSENT_VERSION.
+  processing: {
+    title: "Before the first game",
+    explain:
+      "To show you a result, we keep what the game records while your child plays: taps and their timing, linked to the nickname and birth year you entered. Deleting the child deletes all of it.",
+    agree: "I am this child's parent or legal guardian, and I agree to this.",
+    button: "Continue",
   },
   // FR-70 consent, placeholder wording for the texts owner (shared-texts-claims-pitch.md, step 1).
   consent: {

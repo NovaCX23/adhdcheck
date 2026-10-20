@@ -1,6 +1,7 @@
 import { ScoreResultSchema, type ScoreResult } from "@adhdcheck/contracts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isMissionKey } from "../missions";
+import { PROCESSING_CONSENT_VERSION } from "../processing-consent";
 
 // Data for the parent pages (Person 4). Pass the logged-in parent's client (lib/supabase/server.ts in
 // Server Components, lib/supabase/client.ts in Client Components): RLS returns only their own rows.
@@ -62,12 +63,32 @@ export function toSessionResult(row: SessionRow): SessionResult {
   };
 }
 
-// FR-31: nickname and birth year only (NFR-01). Returns null when the input is not acceptable.
-export function validateNewChild(input: unknown): { nickname: string; birth_year: number } | null {
+// Intended purpose: children aged 6 to 12 (docs/02 section 2). The add-child form uses the same bounds.
+export const MIN_AGE = 6;
+export const MAX_AGE = 12;
+
+// The longest nickname; the database check (migration 20261021120000_child_bounds) uses the same number.
+// Placeholder: TODO texts owner confirms (docs/02 FR-31).
+export const MAX_NICKNAME_LENGTH = 40;
+
+// With the birth year only, the accepted years are (current year - 12) to (current year - 6), the same
+// range the database trigger children_age_range enforces (migration 20261021100000_child_age_range).
+export function birthYearRange(now: Date = new Date()) {
+  const year = now.getUTCFullYear();
+  return { min: year - MAX_AGE, max: year - MIN_AGE };
+}
+
+// FR-31: nickname and birth year only (NFR-01). Returns null when the input is not acceptable,
+// including a birth year outside the 6 to 12 age range (checked on the server, not only in the form).
+export function validateNewChild(input: unknown, now: Date = new Date()): { nickname: string; birth_year: number } | null {
   const { nickname, birth_year } = (input ?? {}) as { nickname?: unknown; birth_year?: unknown };
-  if (typeof nickname !== "string" || nickname.trim().length === 0) return null;
+  if (typeof nickname !== "string") return null;
+  const name = nickname.trim();
+  if (name.length === 0 || name.length > MAX_NICKNAME_LENGTH) return null;
   if (typeof birth_year !== "number" || !Number.isInteger(birth_year)) return null;
-  return { nickname: nickname.trim(), birth_year };
+  const { min, max } = birthYearRange(now);
+  if (birth_year < min || birth_year > max) return null;
+  return { nickname: name, birth_year };
 }
 
 export async function listChildren(client: SupabaseClient): Promise<Child[]> {
@@ -109,6 +130,18 @@ export function onNewScore(client: SupabaseClient, onScore: (sessionId: string) 
   return () => {
     void client.removeChannel(channel);
   };
+}
+
+// NFR-04: whether the parent has agreed to the current consent text, and record that they do (RLS: the
+// row is always the caller's own, and cannot be changed afterwards). POST /api/play-links checks the same.
+export async function hasProcessingConsent(client: SupabaseClient): Promise<boolean> {
+  const result = await client.from("processing_consents").select("id").eq("version", PROCESSING_CONSENT_VERSION).limit(1);
+  return check<{ id: number }[]>(result, "read consent").length > 0;
+}
+
+export async function giveProcessingConsent(client: SupabaseClient): Promise<void> {
+  const result = await client.from("processing_consents").insert({ version: PROCESSING_CONSENT_VERSION });
+  check(result, "record consent");
 }
 
 // FR-45, FR-48: the parent's Stripe subscription status ("active", "trialing", "past_due", "canceled", ...),

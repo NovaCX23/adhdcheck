@@ -4,7 +4,16 @@ import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
 import { attempt } from "@/lib/attempt";
-import { createChild, getSubscriptionStatus, listChildren, listSessionResults, type Child } from "@/lib/data/parent";
+import { isPaidStatus } from "@/lib/paid";
+import {
+  birthYearRange,
+  createChild,
+  getSubscriptionStatus,
+  listChildren,
+  listSessionResults,
+  MAX_NICKNAME_LENGTH,
+  type Child,
+} from "@/lib/data/parent";
 import { BAND_TEXT, S } from "./strings";
 import { ErrorNote, Loading, Panel, Shell, buttonPrimary, buttonQuiet, field, postJson, useParent } from "./_components/shell";
 import { BandHeadline } from "./_components/BandHeadline";
@@ -23,7 +32,7 @@ async function fetchRows(client: SupabaseClient): Promise<Row[]> {
 }
 
 // The parent's home (FR-31): their children with the last result, add a child (nickname and birth year
-// only), the demo reset (FR-56) and the family plan (FR-45, FR-46).
+// only), the demo reset (FR-56) and, for a paying parent only, managing the plan (FR-46, D-05).
 export function ParentHome() {
   const { client, ready } = useParent();
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -108,9 +117,12 @@ export function ParentHome() {
               <DemoReset onDone={load} />
             </Panel>
           )}
-          <Panel title={S.billing.title}>
-            <Billing plan={plan} />
-          </Panel>
+          {/* D-05: no paywall here. The plan panel is only for a paying parent, to manage or cancel (FR-46). */}
+          {isPaidStatus(plan ?? null) && (
+            <Panel title={S.billing.title}>
+              <Billing />
+            </Panel>
+          )}
         </aside>
       </div>
     </Shell>
@@ -120,7 +132,7 @@ export function ParentHome() {
 function AddChild({ onAdd }: { onAdd: (input: { nickname: string; birth_year: number }) => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const year = new Date().getFullYear();
+  const years = birthYearRange();
   return (
     <form
       className="grid gap-3 sm:grid-cols-[1fr_9rem_auto] sm:items-end"
@@ -136,11 +148,11 @@ function AddChild({ onAdd }: { onAdd: (input: { nickname: string; birth_year: nu
     >
       <label className="block">
         <span className="mb-1 block text-sm font-semibold">{S.home.nickname}</span>
-        <input name="nickname" required maxLength={40} autoComplete="off" className={field} />
+        <input name="nickname" required maxLength={MAX_NICKNAME_LENGTH} autoComplete="off" className={field} />
       </label>
       <label className="block">
         <span className="mb-1 block text-sm font-semibold">{S.home.birthYear}</span>
-        <input name="birth_year" type="number" required min={year - 12} max={year - 6} defaultValue={year - 8} className={field} />
+        <input name="birth_year" type="number" required min={years.min} max={years.max} defaultValue={years.max - 2} className={field} />
       </label>
       <button type="submit" disabled={busy} className={buttonPrimary}>
         {S.home.add}
@@ -178,25 +190,21 @@ function DemoReset({ onDone }: { onDone: () => Promise<void> }) {
   );
 }
 
-function Billing({ plan }: { plan: string | null | undefined }) {
+// A paying parent manages or cancels the plan in the Stripe Customer Portal (FR-46). Subscribing starts
+// from the report download (ReportDownload), the only paid feature (D-05).
+function Billing() {
   const [note, setNote] = useState<string | null>(null);
-  const active = plan === "active" || plan === "trialing";
-  async function go(path: string) {
-    const res = await postJson(path).catch(() => null);
+  async function manage() {
+    const res = await postJson("/api/stripe/portal").catch(() => null);
     const body = (await res?.json().catch(() => ({}))) as { url?: string } | undefined;
     if (res?.ok && body?.url) window.location.assign(body.url);
     else setNote(S.billing.unavailable);
   }
-  if (plan === undefined) return <Loading />;
   return (
     <div className="space-y-3">
-      <p className="text-ink-muted">{active ? S.billing.active : S.billing.inactive}</p>
-      <button
-        type="button"
-        className={active ? buttonQuiet : buttonPrimary}
-        onClick={() => go(active ? "/api/stripe/portal" : "/api/stripe/checkout")}
-      >
-        {active ? S.billing.manage : S.billing.subscribe}
+      <p className="text-ink-muted">{S.billing.active}</p>
+      <button type="button" className={buttonQuiet} onClick={manage}>
+        {S.billing.manage}
       </button>
       {note && <p role="status" className="text-sm text-ink-muted">{note}</p>}
     </div>
