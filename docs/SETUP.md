@@ -60,12 +60,28 @@ Copy `.env.example` to `apps/web/.env.local` (gitignored) and fill the values th
 | `SUPABASE_SERVICE_ROLE_KEY` | server only |
 | `STRIPE_SECRET_KEY` | server only, Stripe test mode |
 | `STRIPE_WEBHOOK_SECRET` | server only |
-| `STRIPE_PRICE_ID` | server only: the test-mode recurring price used by `POST /api/stripe/checkout` (the subscription unlocks the report download only, D-05; product and price: decision D-05b) |
-| `RESEND_API_KEY` | server only |
+| `STRIPE_PRICE_ID` | server only: the test-mode **one-time** price of the detailed report, 9.99 EUR (D-05b), used by `POST /api/stripe/checkout` in `mode: "payment"`. A recurring price is refused by Stripe in that mode |
+| `RESEND_API_KEY` | server only: sends the paid report by email (FR-51). Optional: without it the purchase is still recorded and the parent downloads the report |
+| `REPORT_FROM_EMAIL` | server only: the sender of the report email, for example `ADHDCheck <reports@your-verified-domain>`. It must be on a domain verified in Resend: `onboarding@resend.dev` only delivers to the Resend account owner's own address (https://resend.com/docs/knowledge-base/403-error-resend-dev-domain). Optional, as above |
 | `DEMO_PARENT_EMAIL` | server only: the account that may use Reset demo (`POST /api/demo/reset`) |
 | `GAME_HARNESS` | server only: set to `1` to serve the dev game pages under `/play` (bridge-wait, star-path, treasure-choice, route-planner, wake-fireflies) in production; read at build, off by default |
 
 The names follow the usual convention of each provider; confirm them against the provider quickstart when you wire the service.
+
+## 4b. Stripe and Resend for the paid report (D-05b), for the owner to configure
+
+Decision D-05b (Hatem, 2026-10-20): the detailed PDF report costs 9.99 EUR, paid once per report. It is emailed to the parent who paid and stays downloadable on the parent page.
+
+1. **Stripe product and price (test mode).** Create a product for the detailed report with a **one-time** price of 9.99 EUR. Put the price id (`price_...`) in `STRIPE_PRICE_ID`.
+2. **Webhook endpoint.** In the Stripe Dashboard (test mode), Developers, Webhooks, add the endpoint `https://<production domain>/api/stripe/webhook` and select exactly these events:
+   - `checkout.session.completed`
+   - `checkout.session.async_payment_succeeded`
+
+   Copy its signing secret into `STRIPE_WEBHOOK_SECRET`. The subscription events (`customer.subscription.*`) are no longer used and can be removed from an existing endpoint. Locally: `stripe listen --forward-to localhost:3000/api/stripe/webhook --events checkout.session.completed,checkout.session.async_payment_succeeded` prints a test signing secret.
+3. **Resend.** Verify the sending domain at https://resend.com/domains, then set `RESEND_API_KEY` and `REPORT_FROM_EMAIL` (an address on that domain). With `onboarding@resend.dev` only the Resend account owner receives the email; Resend refuses other recipients with a 403, which the webhook logs as `email_rejected` without retrying.
+4. **Database.** Apply `supabase/migrations/20261021130000_report_purchases.sql` and then `supabase/migrations/20261021140000_drop_subscriptions.sql` to the live project (`npx supabase db push`). Until the first one is applied, checkout and the report download answer 503.
+
+What the webhook does: it verifies the signature on the raw body (400 otherwise), marks the purchase paid once (a replayed or concurrent event changes nothing), builds the PDF, emails it to the address the parent signed up with (Supabase auth), and records `emailed_at`. The email carries a Resend idempotency key per Checkout Session, so two deliveries of one event send one email. A temporary email failure answers 500 so that Stripe retries; a missing email configuration or a permanent refusal answers 200 with a logged code (never the address).
 
 ## 5. Status of the stubs
 
@@ -91,8 +107,8 @@ The names follow the usual convention of each provider; confirm them against the
 | @supabase/supabase-js | 2.118.0 | not added yet | MIT | npm registry |
 | @mediapipe/tasks-vision | 1.1.1 | not added yet | Apache-2.0 | npm registry |
 | @ricky0123/vad-web | 0.0.31 | not added yet | ISC | npm registry |
-| stripe | 23.0.0 | not added yet | MIT | npm registry |
-| resend | 6.34.1 | not added yet | MIT | npm registry |
+| stripe | 23.0.0 | `^22.6.2` | MIT | npm registry |
+| resend | 6.34.1 | `^6.34.1` | MIT | npm registry |
 | qrcode | 1.5.4 | not added yet | MIT | npm registry |
 | pnpm | 12.14.0 | not used | MIT | npm registry |
 

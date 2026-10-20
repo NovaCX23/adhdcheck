@@ -44,18 +44,25 @@ export const S = {
   },
   demo: { label: "Demo account", reset: "Reset demo", resetting: "Resetting…", done: "Demo data restored." },
   billing: {
-    title: "Family plan",
-    active: "Your plan is active.",
-    subscribe: "Subscribe (test mode)",
-    manage: "Manage plan",
-    unavailable: "Billing is not set up yet.",
+    unavailable: "Payment is not available right now. Please try again later.",
   },
-  // D-05 (DECIDED, Hatem, 2026-10-20): only the report download is paid. Placeholder wording for the
-  // texts owner (shared-texts-claims-pitch.md).
+  // D-05 and D-05b (DECIDED, Hatem, 2026-10-20): only the detailed report is paid, 9.99 EUR, one-off per
+  // report, emailed to the parent who paid. offerTitle and sentAndHere are the owner's words; the rest is
+  // placeholder wording for the texts owner (shared-texts-claims-pitch.md). offerText lists only what
+  // lib/report.ts buildReport puts in the PDF.
   report: {
+    offerTitle: "Get the detailed report, 9.99 EUR, one-off",
+    offerText:
+      "A PDF of this session to bring to an appointment: the date, the result with the note that it is not a diagnosis, the game measures and the next step. You pay once for this report. Nothing renews.",
+    offerFree: "The result and the next step above stay free, whether you buy the report or not.",
+    buy: "Get the report",
+    buying: "Opening the payment page…",
+    confirming: "Thank you. We are confirming the payment. This can take a moment; you can reload this page.",
+    sentAndHere: "Sent to your email, and available here",
+    availableHere: "Your report is available here.",
+    checking: "Checking the report…",
     download: "Download the report (PDF)",
     preparing: "Preparing the report…",
-    paywall: "Downloading the report comes with the family plan. The result, the next step, missions and progress stay free.",
   },
   session: {
     title: "Play a game",

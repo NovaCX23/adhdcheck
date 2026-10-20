@@ -3,19 +3,20 @@ import { renderReportPdf } from "../../../lib/report";
 import { sessionResult } from "../../../lib/report-test-helpers";
 import { handleReportDownload, type ReportDeps } from "./handlers";
 
-// GET /api/reports/<sessionId> (D-05, FR-48): the only paid feature. The payment check is on the server,
-// so hiding or showing a button in the page changes nothing about who gets the file.
+// GET /api/reports/<sessionId> (D-05, D-05b, FR-48): the only paid feature, a one-off payment per report.
+// The payment check is on the server, so hiding or showing a button in the page changes nothing about who
+// gets the file.
 
 const SESSION = "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b";
 const PARENT = "00000000-0000-4000-8000-00000000000a";
 
-function deps(over: Partial<{ parentId: string | null; report: Awaited<ReturnType<ReportDeps["getReport"]>>; status: string | null }> = {}) {
-  const o = { parentId: PARENT as string | null, report: { result: sessionResult("follow_up_suggested"), nickname: "Demo Fox" }, status: "active" as string | null, ...over };
+function deps(over: Partial<{ parentId: string | null; report: Awaited<ReturnType<ReportDeps["getReport"]>>; paid: boolean }> = {}) {
+  const o = { parentId: PARENT as string | null, report: { result: sessionResult("follow_up_suggested"), nickname: "Demo Fox" }, paid: true, ...over };
   const getReport = vi.fn().mockResolvedValue(o.report);
-  const getSubscriptionStatus = vi.fn().mockResolvedValue(o.status);
+  const isReportPaid = vi.fn().mockResolvedValue(o.paid);
   const renderPdf = vi.fn(renderReportPdf);
-  const d: ReportDeps = { getParentId: async () => o.parentId, getReport, getSubscriptionStatus, renderPdf };
-  return { d, getReport, getSubscriptionStatus, renderPdf };
+  const d: ReportDeps = { getParentId: async () => o.parentId, getReport, isReportPaid, renderPdf };
+  return { d, getReport, isReportPaid, renderPdf };
 }
 
 describe("GET /api/reports/<sessionId>", () => {
@@ -33,8 +34,8 @@ describe("GET /api/reports/<sessionId>", () => {
     expect(getReport).not.toHaveBeenCalled();
   });
 
-  it("answers 404 for another parent's session (RLS returns nothing), even with a paid plan", async () => {
-    const { d, renderPdf } = deps({ report: null, status: "active" });
+  it("answers 404 for another parent's session (RLS returns nothing), even when that report was paid", async () => {
+    const { d, renderPdf } = deps({ report: null, paid: true });
     const res = await handleReportDownload(SESSION, d);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "unknown_session" });
@@ -46,17 +47,18 @@ describe("GET /api/reports/<sessionId>", () => {
     expect((await handleReportDownload(SESSION, d)).status).toBe(404);
   });
 
-  it.each([null, "canceled", "past_due", "incomplete"])("answers 402 payment_required to an unpaid parent (status %s) and builds no file", async (status) => {
-    const { d, renderPdf } = deps({ status });
+  it("answers 402 payment_required when this report has no paid purchase, and builds no file", async () => {
+    const { d, renderPdf, isReportPaid } = deps({ paid: false });
     const res = await handleReportDownload(SESSION, d);
     expect(res.status).toBe(402);
     expect(await res.json()).toEqual({ error: "payment_required" });
     expect(res.headers.get("content-type")).not.toContain("pdf");
     expect(renderPdf).not.toHaveBeenCalled();
+    expect(isReportPaid).toHaveBeenCalledWith(SESSION);
   });
 
-  it.each(["active", "trialing"])("sends the PDF to a paid parent (status %s)", async (status) => {
-    const { d } = deps({ status });
+  it("sends the PDF to the parent who paid for this report", async () => {
+    const { d } = deps({ paid: true });
     const res = await handleReportDownload(SESSION, d);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/pdf");
@@ -71,7 +73,7 @@ describe("GET /api/reports/<sessionId>", () => {
     d.getReport = vi.fn().mockRejectedValue(new Error("down"));
     expect((await handleReportDownload(SESSION, d)).status).toBe(503);
     const second = deps();
-    second.d.getSubscriptionStatus = vi.fn().mockRejectedValue(new Error("down"));
+    second.d.isReportPaid = vi.fn().mockRejectedValue(new Error("down"));
     expect((await handleReportDownload(SESSION, second.d)).status).toBe(503);
   });
 });

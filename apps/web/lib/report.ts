@@ -3,9 +3,9 @@ import { SCORE_DISCLAIMER } from "@adhdcheck/contracts";
 import { BAND_TEXT, S } from "../app/parent/strings";
 import type { SessionResult } from "./data/parent";
 import { formatDate } from "./format";
-import { isPaidStatus } from "./paid";
 
-// Parent report download (D-05, DECIDED, Hatem, 2026-10-20; FR-48). The only paid feature. It holds only
+// Parent report (D-05 and D-05b, DECIDED, Hatem, 2026-10-20; FR-48). The only paid feature: 9.99 EUR,
+// one-off per report, emailed to the parent who paid and downloadable by that parent. It holds only
 // what the result card already shows, with the same texts: nickname, session date, the fixed headline and
 // its supporting line, the fixed disclaimer, the game measures as game measures, and the next step. No
 // reason lines (placeholders), no probability, no severity, no diagnosis words (lib/report.test.ts).
@@ -16,8 +16,6 @@ import { isPaidStatus } from "./paid";
 
 export type ReportLine = { kind: "title" | "heading" | "text" | "small"; text: string };
 export type ReportModel = { fileName: string; lines: ReportLine[] };
-
-export { isPaidStatus };
 
 const RATE_KEYS = ["omission_rate", "commission_rate", "off_target_tap_rate"] as const;
 const pct = (v: number) => `${Math.round(v * 100)}%`;

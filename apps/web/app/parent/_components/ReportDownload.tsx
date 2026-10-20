@@ -1,17 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getReportPurchase } from "../../../lib/data/parent";
+import { createLazyClient } from "../../../lib/supabase/client";
 import { S } from "../strings";
+import { reportView, type ReportView } from "./report-view";
 import { ErrorNote, buttonPrimary, buttonQuiet, postJson } from "./shell";
 
-// D-05 (DECIDED, Hatem, 2026-10-20): downloading the report is the only paid feature. The paywall shows
-// only here, and only after the server answers 402 (GET /api/reports/<id> checks the plan itself).
+// D-05 and D-05b (DECIDED, Hatem, 2026-10-20): the detailed report is the only paid feature, 9.99 EUR, paid
+// once per report. After payment it is emailed to the parent who paid and stays downloadable here. The
+// result and the next step above never depend on this block. The server checks payment itself
+// (GET /api/reports/<id> answers 402 without a paid purchase), so this block only chooses what to show.
+
+const CONFIRM_POLLS = 10;
+const CONFIRM_EVERY_MS = 2000;
+
 export function ReportDownload({ sessionId }: { sessionId: string }) {
-  const [state, setState] = useState<"idle" | "busy" | "paywall" | "failed">("idle");
+  const client = useMemo(() => createLazyClient(), []);
+  const [view, setView] = useState<ReportView | "checking">("checking");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
+  useEffect(() => {
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const returning = new URLSearchParams(window.location.search).get("report") === "paid";
+    const check = async (left: number) => {
+      const purchase = await getReportPurchase(client, sessionId).catch(() => null);
+      if (!live) return;
+      // Back from checkout and not yet paid: keep the wait message (never the offer, so nobody pays twice).
+      const next = reportView(purchase, returning);
+      setView(next);
+      if (next === "confirming" && left > 0) timer = setTimeout(() => void check(left - 1), CONFIRM_EVERY_MS);
+    };
+    void check(CONFIRM_POLLS);
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [client, sessionId]);
+
   async function download() {
-    setState("busy");
+    setBusy(true);
+    setFailed(false);
     const res = await fetch(`/api/reports/${sessionId}`, { cache: "no-store" }).catch(() => null);
     if (res?.ok) {
       const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "report.pdf";
@@ -21,32 +53,64 @@ export function ReportDownload({ sessionId }: { sessionId: string }) {
       a.download = name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      setState("idle");
-    } else setState(res?.status === 402 ? "paywall" : "failed");
+    } else if (res?.status === 402) setView("offer");
+    else setFailed(true);
+    setBusy(false);
   }
 
-  async function subscribe() {
-    const res = await postJson("/api/stripe/checkout").catch(() => null);
-    const body = (await res?.json().catch(() => ({}))) as { url?: string } | undefined;
-    if (res?.ok && body?.url) window.location.assign(body.url);
+  async function buy() {
+    setBusy(true);
+    setNote(null);
+    const res = await postJson("/api/stripe/checkout", { sessionId }).catch(() => null);
+    const body = (await res?.json().catch(() => ({}))) as { url?: string; error?: string } | undefined;
+    if (res?.ok && body?.url) {
+      window.location.assign(body.url);
+      return;
+    }
+    if (res?.status === 409) setView("paid");
     else setNote(S.billing.unavailable);
+    setBusy(false);
+  }
+
+  if (view === "checking") return <p className="text-sm text-ink-muted">{S.report.checking}</p>;
+
+  if (view === "confirming") {
+    return (
+      <p role="status" className="text-ink-muted">
+        {S.report.confirming}
+      </p>
+    );
+  }
+
+  if (view === "offer") {
+    return (
+      <section aria-labelledby={`report-offer-${sessionId}`} className="space-y-3">
+        <h4 id={`report-offer-${sessionId}`} className="font-display text-lg font-semibold">
+          {S.report.offerTitle}
+        </h4>
+        <p className="max-w-[65ch]">{S.report.offerText}</p>
+        <p className="max-w-[65ch] text-sm text-ink-muted">{S.report.offerFree}</p>
+        <button type="button" disabled={busy} onClick={buy} className={buttonPrimary}>
+          {busy ? S.report.buying : S.report.buy}
+        </button>
+        {note && (
+          <p role="status" className="text-sm text-ink-muted">
+            {note}
+          </p>
+        )}
+      </section>
+    );
   }
 
   return (
     <div className="space-y-3">
-      <button type="button" disabled={state === "busy"} onClick={download} className={buttonQuiet}>
-        {state === "busy" ? S.report.preparing : S.report.download}
+      <p role="status" className="font-semibold">
+        {view === "paid_emailed" ? S.report.sentAndHere : S.report.availableHere}
+      </p>
+      <button type="button" disabled={busy} onClick={download} className={buttonQuiet}>
+        {busy ? S.report.preparing : S.report.download}
       </button>
-      {state === "paywall" && (
-        <div role="status" className="space-y-3 rounded-xl bg-cream-2 p-4">
-          <p>{S.report.paywall}</p>
-          <button type="button" onClick={subscribe} className={buttonPrimary}>
-            {S.billing.subscribe}
-          </button>
-          {note && <p className="text-sm text-ink-muted">{note}</p>}
-        </div>
-      )}
-      {state === "failed" && <ErrorNote />}
+      {failed && <ErrorNote />}
     </div>
   );
 }
