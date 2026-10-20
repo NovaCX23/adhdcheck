@@ -66,14 +66,18 @@ describe("landing wording gate", () => {
   });
 
   for (const lang of ["ro", "en"] as const) {
-    // The price and product are not decided (docs/02 D-05b) and checkout sells a subscription (FR-45), so
-    // the page states no price figure and no billing model. The paid items list only what lib/report.ts
-    // buildReport puts in the PDF, and the result card does show percentages.
-    it(`claims no undecided price or billing model, and nothing the report or result does not hold (${lang})`, () => {
+    // D-05b (DECIDED, Hatem, 2026-10-20): the detailed report is 9.99 EUR, a one-off payment per report, and
+    // checkout sells exactly that (mode "payment"). The page states that price and no other figure, and no
+    // subscription. The paid items list only what lib/report.ts buildReport puts in the PDF, and the result
+    // card does show percentages.
+    it(`states the decided price (9.99 EUR, one-off) and nothing the report or result does not hold (${lang})`, () => {
       const t = content[lang];
       const all = strings(t).join(" ").toLowerCase();
-      expect(all).not.toMatch(/\d+[.,]\d{2}\s*(eur|€)/);
-      expect(all).not.toMatch(/one-off|o singură dată|no subscription|fără abonament|nothing renews|nu se reînnoiește|paid once/);
+      expect(t.offer.paid.price).toBe(lang === "en" ? "9.99 EUR" : "9,99 EUR");
+      expect(t.offer.paid.priceNote.toLowerCase()).toMatch(lang === "en" ? /one-off/ : /o singură dată/);
+      const figures = [...all.matchAll(/\d+[.,]\d{2}\s*(?:eur|€)/g)].map((m) => m[0].replace(",", "."));
+      expect(new Set(figures)).toEqual(new Set(["9.99 eur"]));
+      expect(all).not.toMatch(/price to be confirmed|preț în curs de stabilire|per month|pe lună|monthly|lunar|family plan|plan de familie/);
       expect(t.offer.paid.items.join(" ").toLowerCase()).not.toMatch(/device|dispozitiv|quality|calitate|each mini-game|fiecare mini-joc/);
       expect(t.result.sub.toLowerCase()).not.toMatch(/percent|procent/);
     });

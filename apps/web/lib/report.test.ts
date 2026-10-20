@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SCORE_DISCLAIMER, type ScoreResult } from "@adhdcheck/contracts";
 import { BAND_TEXT, S } from "../app/parent/strings";
 import { formatDate } from "../app/parent/_components/ResultCard";
-import { buildReport, isPaidStatus, renderReportPdf } from "./report";
+import { buildReport, renderReportPdf } from "./report";
 import { TEST_STARTED as STARTED, pdfText, sessionResult } from "./report-test-helpers";
 
 // D-05 / FR-48: the downloadable parent report. It holds only what the result card already shows.
@@ -78,18 +78,5 @@ describe("parent report PDF (D-05, FR-48)", () => {
 
   it("names the file by the session date, never by the nickname", () => {
     expect(buildReport(sessionResult("no_flag"), "Demo Fox")!.fileName).toBe("report-2026-10-12.pdf");
-  });
-});
-
-describe("isPaidStatus", () => {
-  it.each([
-    ["active", true],
-    ["trialing", true],
-    ["past_due", false],
-    ["canceled", false],
-    ["incomplete", false],
-    [null, false],
-  ] as const)("%s gives %s", (status, paid) => {
-    expect(isPaidStatus(status)).toBe(paid);
   });
 });

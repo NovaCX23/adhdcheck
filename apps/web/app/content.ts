@@ -3,8 +3,8 @@
 // no likelihood, severity, accuracy, treatment or validation claim; nothing says the reader's child has a
 // condition. landing-copy.test.ts enforces this on every string below and on the rendered page.
 // Product facts used here, decided by the owner (2026-10-20): 10–\u206015 minute 3D game with Luma, the headline
-// and next step always free (decision A), only the PDF report is paid (D-05); price and product: TODO
-// (docs/02 D-05b), so the page states no price figure and no billing model. Pilot, not CE marked.
+// and next step always free (decision A), only the PDF report is paid (D-05): 9.99 EUR, one-off per report,
+// sent by email to the parent who paid (docs/02 D-05b, DECIDED, Hatem, 2026-10-20). Pilot, not CE marked.
 // "10–\u206015": a word joiner keeps the range on one line.
 // Retention period is still open (docs/02 D-09), so the FAQ says so instead of giving a number.
 
@@ -115,8 +115,8 @@ const ro = {
     },
     paid: {
       label: "Raportul detaliat",
-      price: "Preț în curs de stabilire",
-      priceNote: "prețul se stabilește în timpul pilotului",
+      price: "9,99 EUR",
+      priceNote: "plătești o singură dată, fără abonament",
       items: [
         "Un PDF pe care îl duci la programare",
         "Data sesiunii, rezultatul și mențiunea că nu este un diagnostic",
@@ -167,8 +167,8 @@ const ro = {
         a: "Durata exactă de păstrare se stabilește în timpul pilotului și va fi scrisă în nota de confidențialitate înainte de lansare. Până atunci, poți șterge oricând profilul și toate sesiunile lui.",
       },
       {
-        q: "Ce primesc dacă plătesc raportul?",
-        a: "Un raport PDF pentru acea sesiune. Rezultatul și pasul următor rămân gratuite, fie că îl cumperi, fie că nu.",
+        q: "Ce primesc pentru 9,99 EUR?",
+        a: "Un raport PDF detaliat pentru acea sesiune, plătit o singură dată și trimis pe e-mailul tău. Fără abonament, nimic nu se reînnoiește. Rezultatul și pasul următor rămân gratuite, fie că îl cumperi, fie că nu.",
       },
       {
         q: "Copilul ia deja medicamente. Mai are sens?",
@@ -304,8 +304,8 @@ const en: Dict = {
     },
     paid: {
       label: "Detailed report",
-      price: "Price to be confirmed",
-      priceNote: "the price is set during the pilot",
+      price: "9.99 EUR",
+      priceNote: "one-off, no subscription",
       items: [
         "A PDF to bring to the appointment",
         "The session date, the result and the note that this is not a diagnosis",
@@ -356,8 +356,8 @@ const en: Dict = {
         a: "The exact retention period is being set during the pilot and will be written in the privacy notice before launch. Until then, you can delete the profile and all its sessions at any time.",
       },
       {
-        q: "What do I get if I pay for the report?",
-        a: "One PDF report for that session. The result and the next step stay free whether you buy it or not.",
+        q: "What do I get for 9.99 EUR?",
+        a: "One detailed PDF report for that session, paid once and sent to your email. No subscription, nothing renews. The result and the next step stay free whether you buy it or not.",
       },
       {
         q: "My child already takes medication. Does it still make sense?",
