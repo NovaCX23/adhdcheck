@@ -3,7 +3,7 @@ import { ScoreResultSchema, type ScoreResult, type SessionMetrics } from "@adhdc
 import { validSessionMetrics } from "../../../../../packages/contracts/src/fixtures/session-metrics.valid";
 import { newPlayCode } from "../../../lib/play-link";
 import type { RateLimiter } from "../../../lib/rate-limit";
-import { handleSessionPost } from "./handler";
+import { handleSessionPost, MAX_BODY_BYTES, MAX_OFF_TARGET_TAPS, MAX_TRIALS } from "./handler";
 import { InvalidPlayLinkError, type SessionStore } from "./store";
 
 // In-memory store: same contract as the Supabase store, no database needed.
@@ -165,6 +165,53 @@ describe("POST /api/sessions", () => {
     const text = JSON.stringify(await res.json());
     expect(text).toContain("trials.0.outcome");
     expect(text).not.toContain("unexpected-value");
+  });
+
+  it("NFR-13: rejects more trials than one session can hold with 400 and saves nothing", async () => {
+    const { store, saved } = memoryStore();
+    const trial = validSessionMetrics.trials[0];
+    const trials = Array.from({ length: MAX_TRIALS + 1 }, (_, i) => ({ ...trial, i }));
+    const res = await post({ ...validSessionMetrics, trials }, store);
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_session", issues: [{ path: "trials", code: "too_big" }] });
+    expect(saved.size).toBe(0);
+  });
+
+  it("NFR-13: rejects more off-target taps than one session can hold with 400", async () => {
+    const { store, saved } = memoryStore();
+    const off_target_taps = Array.from({ length: MAX_OFF_TARGET_TAPS + 1 }, () => ({ t_ms: 1, during: "isi" }));
+    const res = await post({ ...validSessionMetrics, off_target_taps }, store);
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_session", issues: [{ path: "off_target_taps", code: "too_big" }] });
+    expect(saved.size).toBe(0);
+  });
+
+  it("rejects two trials with the same index with 400 instead of a storage error", async () => {
+    const { store, saved } = memoryStore();
+    const [first] = validSessionMetrics.trials;
+    const res = await post({ ...validSessionMetrics, trials: [first, { ...first }] }, store);
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_session", issues: [{ path: "trials.1.i", code: "duplicate" }] });
+    expect(saved.size).toBe(0);
+  });
+
+  it("NFR-13: answers 413 to a body above the size limit, before reading it", async () => {
+    const { store, saved } = memoryStore();
+    const res = await handleSessionPost(
+      new Request("http://localhost/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": String(MAX_BODY_BYTES + 1), authorization: `Bearer ${link.code}` },
+        body: "{}",
+      }),
+      { store, rateLimiter: allowAll },
+    );
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "too_large" });
+    expect(saved.size).toBe(0);
   });
 
   it("logs the error code but never the session content or ids", async () => {
