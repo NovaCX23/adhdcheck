@@ -378,19 +378,29 @@ export function buildWorld(scene: Scene, grad: DataTexture, outlineMat: MeshBasi
   // Bridge: planks, posts, ropes, lanterns.
   const bridge = new Group();
   const wood = [0xb9824f, 0xa87245, 0xc8925a];
-  const planks = new InstancedMesh(new BoxGeometry(0.3, 0.08, 1.36), white, 20);
+  // Planks are slightly wider than their spacing (0.35 vs 0.335) and only lightly
+  // jittered, so neighbours overlap and no water shows between them. A darker
+  // underlay board under each plank closes any remaining seam.
+  const planks = new InstancedMesh(new BoxGeometry(0.35, 0.08, 1.36), white, 20);
+  const under = new InstancedMesh(new BoxGeometry(0.4, 0.05, 1.3), toon(0x6e4628), 20);
   let pk = 0;
   for (let x = -BRIDGE_HALF + 0.17; x <= BRIDGE_HALF - 0.1 && pk < 20; x += 0.335) {
-    dummy.position.set(x, deckY(x), (rnd() - 0.5) * 0.06);
     const slope = (deckY(x + 0.01) - deckY(x - 0.01)) / 0.02;
-    dummy.rotation.set((rnd() - 0.5) * 0.05, (rnd() - 0.5) * 0.06, Math.atan(slope));
+    dummy.position.set(x, deckY(x) - 0.06, 0);
+    dummy.rotation.set(0, 0, Math.atan(slope));
     dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    under.setMatrixAt(pk, dummy.matrix);
+    dummy.position.set(x, deckY(x), (rnd() - 0.5) * 0.04);
+    dummy.rotation.set((rnd() - 0.5) * 0.03, (rnd() - 0.5) * 0.02, Math.atan(slope));
     dummy.updateMatrix();
     planks.setMatrixAt(pk, dummy.matrix);
     planks.setColorAt(pk, new Color(wood[pk % 3] as number));
     pk++;
   }
   planks.count = pk;
+  under.count = pk;
+  bridge.add(under);
   bridge.add(planks);
 
   const postMat = toon(0x8a5a3a);
