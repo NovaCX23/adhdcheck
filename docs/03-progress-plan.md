@@ -40,7 +40,7 @@ Status values: `todo`, `doing`, `done`. Update in the same PR that changes the s
 
 | ID | Title | Owner | Priority | Status | PR |
 |---|---|---|---|---|---|
-| FR-01 | Session link and QR open the game | R1 | Must | doing | server side (play links): https://github.com/mateidragomir74/adhdcheck/pull/6 |
+| FR-01 | Session link and QR open the game | R1 | Must | doing | server side (play links): https://github.com/mateidragomir74/adhdcheck/pull/6; play page: https://github.com/mateidragomir74/adhdcheck/pull/13 (waits for the go/no-go game) |
 | FR-02 | Onboarding and practice round | R1 | Must | todo | |
 | FR-03 | Calibration block | R1 | Must | todo | |
 | FR-04 | Go/no-go task with declared parameters | R1 | Must | todo | |
@@ -51,10 +51,10 @@ Status values: `todo`, `doing`, `done`. Update in the same PR that changes the s
 | FR-09 | Trial outcome classification | R1 with R2 | Must | todo | |
 | FR-10 | Emit valid SessionMetrics v1 | R1 with R2 | Must | todo | |
 | FR-11 | Upload to /api/sessions | R1 with R3 | Must | doing | server side: https://github.com/mateidragomir74/adhdcheck/pull/5, https://github.com/mateidragomir74/adhdcheck/pull/6 |
-| FR-12 | Offline retry, no replay | R1 | Should | todo | |
+| FR-12 | Offline retry, no replay | R1 | Should | doing | https://github.com/mateidragomir74/adhdcheck/pull/8 (upload retries), https://github.com/mateidragomir74/adhdcheck/pull/13 (play page) |
 | FR-13 | Demo round 60 to 90 s | R1 | Must | todo | |
-| FR-14 | Full screen and orientation | R1 | Should | todo | |
-| FR-15 | Child never sees the result | R1 | Must | todo | |
+| FR-14 | Full screen and orientation | R1 | Should | doing | play page start tap: https://github.com/mateidragomir74/adhdcheck/pull/13 |
+| FR-15 | Child never sees the result | R1 | Must | doing | play page end screen: https://github.com/mateidragomir74/adhdcheck/pull/13 |
 | FR-16 | No ads, purchases, external links | R1 | Must | todo | |
 | FR-20 | Validate session, minimum trials | R2 with R3 | Must | doing | server side (validation): https://github.com/mateidragomir74/adhdcheck/pull/5 |
 | FR-21 | Server-side indicators | R2 | Must | todo | |
@@ -64,31 +64,32 @@ Status values: `todo`, `doing`, `done`. Update in the same PR that changes the s
 | FR-25 | Deterministic, versioned scoring | R2 | Must | todo | |
 | FR-26 | No score-selected mission IDs | R2 | Must | todo | |
 | FR-30 | Parent auth | R3 | Must | doing | https://github.com/mateidragomir74/adhdcheck/pull/6 |
-| FR-31 | Child profile, nickname and birth year only | R4 | Must | todo | |
-| FR-32 | Start session, QR and link | R4 | Must | todo | |
-| FR-33 | Result card | R4 | Must | todo | |
-| FR-34 | Fixed result wording | R4 with R5 | Must | todo | |
+| FR-31 | Child profile, nickname and birth year only | R4 | Must | doing | minimal screen: https://github.com/mateidragomir74/adhdcheck/pull/14 |
+| FR-32 | Start session, QR and link | R4 | Must | doing | minimal screen: https://github.com/mateidragomir74/adhdcheck/pull/14 |
+| FR-33 | Result card | R4 | Must | doing | minimal screen: https://github.com/mateidragomir74/adhdcheck/pull/14 |
+| FR-34 | Fixed result wording | R4 with R5 | Must | doing | headlines copied: https://github.com/mateidragomir74/adhdcheck/pull/14 (supporting lines: R5) |
 | FR-35 | Next step and clinician summary | R4 with R5 | Must / Should | todo | |
 | FR-36 | Recommendations, no treatment claims | R4 with R5 | Should | todo | |
-| FR-37 | Parent-chosen missions | R4 | Should | doing | data side (table, RLS, helpers): https://github.com/mateidragomir74/adhdcheck/pull/8 |
-| FR-38 | Progress chart | R4 | Should | doing | data side (helpers, seeded data): https://github.com/mateidragomir74/adhdcheck/pull/8 |
-| FR-39 | Result without manual refresh | R3 with R4 | Could | doing | Realtime on scores: https://github.com/mateidragomir74/adhdcheck/pull/8 |
+| FR-37 | Parent-chosen missions | R4 | Should | doing | data side (table, RLS, helpers): https://github.com/mateidragomir74/adhdcheck/pull/8; minimal screen: https://github.com/mateidragomir74/adhdcheck/pull/14 |
+| FR-38 | Progress chart | R4 | Should | doing | data side (helpers, seeded data): https://github.com/mateidragomir74/adhdcheck/pull/8; minimal chart: https://github.com/mateidragomir74/adhdcheck/pull/14 |
+| FR-39 | Result without manual refresh | R3 with R4 | Could | doing | Realtime on scores: https://github.com/mateidragomir74/adhdcheck/pull/8; QR screen: https://github.com/mateidragomir74/adhdcheck/pull/14 |
 | FR-40 | Shareable result image | R4 | Could | todo | |
 | FR-41 | Delete child and all data | R3 | Must | doing | https://github.com/mateidragomir74/adhdcheck/pull/4, https://github.com/mateidragomir74/adhdcheck/pull/7 |
-| FR-42 | Landing page with QR | R4 | Should | todo | waitlist storage: https://github.com/mateidragomir74/adhdcheck/pull/9 |
+| FR-42 | Landing page with QR | R4 | Should | doing | landing page: https://github.com/mateidragomir74/adhdcheck/pull/1 (merged); waitlist storage: https://github.com/mateidragomir74/adhdcheck/pull/9 |
 | FR-43 | Parent questionnaire (NICHQ Vanderbilt), permission TODO | R4 with R5 | Should | todo | |
 | FR-45 | Stripe Checkout subscription | R4 | Should | doing | API: https://github.com/mateidragomir74/adhdcheck/pull/10 |
 | FR-46 | Customer Portal | R4 | Should | doing | API: https://github.com/mateidragomir74/adhdcheck/pull/10 |
 | FR-47 | Stripe webhook | R4 | Should | doing | https://github.com/mateidragomir74/adhdcheck/pull/10 |
-| FR-48 | Result and next step never paywalled | R4 | Must | todo | |
+| FR-48 | Result and next step never paywalled | R4 | Must | doing | https://github.com/mateidragomir74/adhdcheck/pull/14 |
 | FR-50 | Emails without result data | R4 | Should | todo | |
-| FR-55 | Demo seed, 4 weeks | R3 with R2 | Must | doing | https://github.com/mateidragomir74/adhdcheck/pull/7 (synthetic scores until the scorer exists) |
-| FR-56 | Reset demo button | R3 | Should | doing | API: https://github.com/mateidragomir74/adhdcheck/pull/7 (button: R4) |
+| FR-55 | Demo seed, 4 weeks | R3 with R2 | Must | doing | https://github.com/mateidragomir74/adhdcheck/pull/7, https://github.com/mateidragomir74/adhdcheck/pull/8 (synthetic scores until the scoring rules exist; packages/scoring is a stub) |
+| FR-56 | Reset demo button | R3 | Should | doing | API: https://github.com/mateidragomir74/adhdcheck/pull/7; button: https://github.com/mateidragomir74/adhdcheck/pull/14; rehearsal script: https://github.com/mateidragomir74/adhdcheck/pull/12 |
 | FR-60 | Storm Watch mini-game | R1 | Should | todo | |
-| FR-61 | Star Path mini-game | R1 | Could | todo | |
-| FR-62 | Bridge Wait mini-game | R1 | Could | todo | |
+| FR-61 | Star Path mini-game | R1 | Could | doing | https://github.com/mateidragomir74/adhdcheck/pull/11 |
+| FR-62 | Bridge Wait mini-game | R1 | Could | doing | https://github.com/mateidragomir74/adhdcheck/pull/3 |
 | FR-63 | Treasure Choice mini-game | R1 | Could | todo | |
-| FR-64 | Route Planner mini-game (optional) | R1 | Could | todo | |
+| FR-64 | Route Planner mini-game (optional) | R1 | Could | doing | https://github.com/mateidragomir74/adhdcheck/pull/16 |
+| FR-70 | Camera and microphone consent, both off by default | R4 with R3 | Must | doing | https://github.com/mateidragomir74/adhdcheck/pull/17 (texts: R5) |
 
 NFRs are checked at M3 and M4 against the verification column of 02 section 5; their owners are in section 1.
 

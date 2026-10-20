@@ -89,7 +89,10 @@ select results_eq(
 delete from public.children where id = '00000000-0000-0000-0000-0000000000ca';
 reset role;
 select is_empty($$ select 1 from public.missions where child_id = '00000000-0000-0000-0000-0000000000ca' $$, 'FR-41: no mission left for the deleted child');
-select results_eq($$ select count(*)::int from public.missions $$, array[0], 'no mission left at all');
+select results_eq(
+  $$ select count(*)::int from public.missions m join public.children c on c.id = m.child_id where c.parent_id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b') $$,
+  array[0], 'no mission left for either test parent'
+);
 
 select * from finish();
 rollback;

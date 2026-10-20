@@ -83,11 +83,11 @@ select is(
 );
 reset role;
 
-select results_eq($$ select count(*)::int from public.sessions $$, array[1], 'one session row after the refused and duplicate posts');
-select results_eq($$ select count(*)::int from public.trials $$, array[2], 'two trial rows, not four');
-select results_eq($$ select count(*)::int from public.scores $$, array[1], 'one score row');
+select results_eq($$ select count(*)::int from public.sessions where parent_id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b') $$, array[1], 'one session row after the refused and duplicate posts');
+select results_eq($$ select count(*)::int from public.trials where session_id in (select id from public.sessions where parent_id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b')) $$, array[2], 'two trial rows, not four');
+select results_eq($$ select count(*)::int from public.scores where parent_id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b') $$, array[1], 'one score row');
 select is(
-  (select parent_id from public.sessions),
+  (select parent_id from public.sessions where parent_id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b')),
   '00000000-0000-0000-0000-00000000000a'::uuid,
   'parent_id comes from the link, not from the payload'
 );
@@ -101,10 +101,10 @@ select is(
   null,
   'a refused link stays unused'
 );
-select is((select rt_ms from public.trials where i = 1), null, 'a missing response keeps rt_ms null');
-select is((select off_target_taps from public.sessions), (select session->'off_target_taps' from payload), 'off-target taps kept as jsonb');
-select is((select band from public.scores), 'insufficient_data', 'score band saved');
-select is((select flags from public.scores), '{}'::text[], 'empty flags saved as an empty array');
+select is((select rt_ms from public.trials where session_id in (select id from public.sessions where parent_id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b')) and i = 1), null, 'a missing response keeps rt_ms null');
+select is((select off_target_taps from public.sessions where parent_id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b')), (select session->'off_target_taps' from payload), 'off-target taps kept as jsonb');
+select is((select band from public.scores where parent_id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b')), 'insufficient_data', 'score band saved');
+select is((select flags from public.scores where parent_id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b')), '{}'::text[], 'empty flags saved as an empty array');
 
 -- One transaction: a bad trial leaves no session behind and does not use up the link.
 set local role service_role; -- check-secrets: allow
@@ -119,7 +119,7 @@ select throws_ok(
   'a trial that breaks a check constraint makes the whole save fail'
 );
 reset role;
-select results_eq($$ select count(*)::int from public.sessions $$, array[1], 'no session row from the failed save');
+select results_eq($$ select count(*)::int from public.sessions where parent_id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b') $$, array[1], 'no session row from the failed save');
 select is(
   (select session_id from public.play_links where code_hash = repeat('5', 64)),
   null,

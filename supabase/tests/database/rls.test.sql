@@ -38,7 +38,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000b', 'parent-b@example.test');
 
 select results_eq(
-  $$ select count(*)::int from public.parents $$,
+  $$ select count(*)::int from public.parents where id in ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b') $$,
   array[2],
   'signing up creates a parents row'
 );

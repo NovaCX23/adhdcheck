@@ -17,8 +17,8 @@ set local role service_role; -- check-secrets: allow
 select public.join_waitlist('parent@example.test', 'ro');
 select public.join_waitlist('parent@example.test', 'en');
 reset role;
-select results_eq($$ select count(*)::int from public.waitlist $$, array[1], 'an address is stored once');
-select is((select lang from public.waitlist), 'ro', 'the first sign-up is kept');
+select results_eq($$ select count(*)::int from public.waitlist where email = 'parent@example.test' $$, array[1], 'an address is stored once');
+select is((select lang from public.waitlist where email = 'parent@example.test'), 'ro', 'the first sign-up is kept');
 select throws_ok(
   $$ insert into public.waitlist (email, lang) values ('x@example.test', 'de') $$,
   '23514', null, 'only ro and en are accepted'

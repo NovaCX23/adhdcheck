@@ -7,6 +7,12 @@ import { BAND_TEXT, S } from "../strings";
 
 const RATE_KEYS = ["omission_rate", "commission_rate", "off_target_tap_rate"] as const;
 
+// Notes meant for developers (the placeholder scorer in packages/scoring writes "stub: ...") are not shown
+// to parents. Every other data-quality note is.
+export function isParentNote(note: string) {
+  return !/^stub:/i.test(note.trim());
+}
+
 export function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
 }
@@ -69,7 +75,7 @@ export function ResultCard({ result }: { result: SessionResult }) {
           <p className="mt-2">
             {score.data_quality.n_trials} {S.result.trials} · {pct(score.data_quality.pct_anticipations)} {S.result.anticipations}
           </p>
-          {score.data_quality.notes.map((n) => (
+          {score.data_quality.notes.filter(isParentNote).map((n) => (
             <p key={n} className="mt-1 text-sm text-ink-muted">
               {n}
             </p>

@@ -91,7 +91,7 @@ select results_eq($$ select count(*)::int from public.rate_limits where bucket =
 
 -- FR-41
 delete from public.children where id = '00000000-0000-0000-0000-0000000000ca';
-select results_eq($$ select count(*)::int from public.play_links $$, array[0], 'deleting the child deletes its play links');
+select results_eq($$ select count(*)::int from public.play_links where child_id = '00000000-0000-0000-0000-0000000000ca' $$, array[0], 'deleting the child deletes its play links');
 
 select * from finish();
 rollback;
