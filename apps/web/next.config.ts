@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     agentFeedback: true,
   },
   cacheComponents: true,
+  transpilePackages: ["@adhdcheck/contracts", "@adhdcheck/game", "@adhdcheck/scoring", "@adhdcheck/sensors"],
   partialPrefetching: true,
   turbopack: {
     rules: {

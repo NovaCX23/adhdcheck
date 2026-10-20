@@ -1,6 +1,6 @@
 // Early-access sign-ups from the landing page.
 // TODO: persist to Supabase (Frankfurt) table `waitlist` and send the confirmation via Resend
-// (research/03-tech-stack.md, sections 1 and 7). For the demo the address is only logged.
+// (research/03-tech-stack.md, sections 1 and 7). Not persisted yet: the address is neither stored nor logged.
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -17,6 +17,6 @@ export async function POST(request: Request) {
     return Response.json({ ok: false }, { status: 400 });
   }
 
-  console.log("[waitlist]", { email, lang: lang === "en" ? "en" : "ro", at: new Date().toISOString() });
+  console.log("[waitlist] signup received", { lang: lang === "en" ? "en" : "ro", at: new Date().toISOString() });
   return Response.json({ ok: true });
 }

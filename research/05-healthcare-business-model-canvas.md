@@ -427,9 +427,9 @@ What the sources say:
 - W-cimit. https://www.cimit.org/web/guest/h-bmc returned the CIMIT home page, no H-BMC content (P)
 
 **Research files (team sources of truth)**
-- R01. C:\Users\Clinical Evaluation\Desktop\adhdcheck\research\01-literature-unmet-need.md (reference numbers as in that file)
-- R02. C:\Users\Clinical Evaluation\Desktop\adhdcheck\research\02-competitors-and-regulatory.md (section or reference numbers as in that file)
-- R03. C:\Users\Clinical Evaluation\Desktop\adhdcheck\research\03-tech-stack.md (section numbers)
+- R01. research/01-literature-unmet-need.md (reference numbers as in that file)
+- R02. research/02-competitors-and-regulatory.md (section or reference numbers as in that file)
+- R03. research/03-tech-stack.md (section numbers)
 - 04-game-design-symptom-mapping.md: not present in the folder on 2026-10-19.
 
 **Web sources**
