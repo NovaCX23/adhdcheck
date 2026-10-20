@@ -4,7 +4,15 @@ import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
 import { attempt } from "@/lib/attempt";
-import { createChild, getSubscriptionStatus, listChildren, listSessionResults, type Child } from "@/lib/data/parent";
+import {
+  birthYearRange,
+  createChild,
+  getSubscriptionStatus,
+  listChildren,
+  listSessionResults,
+  MAX_NICKNAME_LENGTH,
+  type Child,
+} from "@/lib/data/parent";
 import { BAND_TEXT, S } from "./strings";
 import { ErrorNote, Loading, Panel, Shell, buttonPrimary, buttonQuiet, field, postJson, useParent } from "./_components/shell";
 import { BandHeadline } from "./_components/BandHeadline";
@@ -120,7 +128,7 @@ export function ParentHome() {
 function AddChild({ onAdd }: { onAdd: (input: { nickname: string; birth_year: number }) => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const year = new Date().getFullYear();
+  const years = birthYearRange();
   return (
     <form
       className="grid gap-3 sm:grid-cols-[1fr_9rem_auto] sm:items-end"
@@ -136,11 +144,11 @@ function AddChild({ onAdd }: { onAdd: (input: { nickname: string; birth_year: nu
     >
       <label className="block">
         <span className="mb-1 block text-sm font-semibold">{S.home.nickname}</span>
-        <input name="nickname" required maxLength={40} autoComplete="off" className={field} />
+        <input name="nickname" required maxLength={MAX_NICKNAME_LENGTH} autoComplete="off" className={field} />
       </label>
       <label className="block">
         <span className="mb-1 block text-sm font-semibold">{S.home.birthYear}</span>
-        <input name="birth_year" type="number" required min={year - 12} max={year - 6} defaultValue={year - 8} className={field} />
+        <input name="birth_year" type="number" required min={years.min} max={years.max} defaultValue={years.max - 2} className={field} />
       </label>
       <button type="submit" disabled={busy} className={buttonPrimary}>
         {S.home.add}

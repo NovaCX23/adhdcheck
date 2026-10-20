@@ -128,4 +128,14 @@ describe("GET /api/play-links/[code] (FR-01)", () => {
     const res = await handleResolvePlayLink(newPlayCode().code, { store });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
+
+  it("answers 500, not a storage error, when the stored link breaks the contract", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const store: PlayLinkStore = { issue: vi.fn(), resolve: vi.fn().mockResolvedValue({ childId: "", consent: OFF }) };
+    const res = await handleResolvePlayLink(newPlayCode().code, { store });
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "invalid_answer" });
+    expect(JSON.stringify(error.mock.calls)).toContain("invalid_answer");
+  });
 });

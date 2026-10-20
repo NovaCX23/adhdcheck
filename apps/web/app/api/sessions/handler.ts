@@ -1,4 +1,5 @@
 import { ScoreResultSchema, SessionMetricsSchema } from "@adhdcheck/contracts";
+import type { z } from "zod";
 import { scoreSession } from "@adhdcheck/scoring";
 import { hashPlayCode, readBearerCode } from "../../../lib/play-link";
 import { clientKey, type RateLimiter } from "../../../lib/rate-limit";
@@ -12,8 +13,34 @@ import { InvalidPlayLinkError, type SessionStore } from "./store";
 // are rate limited per client address (NFR-13), checked first so a burst costs no parsing.
 // Errors are logged by code only: no session content, no ids, no code (NFR-02).
 
+// Server limits on one upload (NFR-13), so a bad or hostile client cannot make one request costly.
+// Lantern Watch is designed at 3 blocks of 48 trials plus 10 calibration trials (docs/02 FR-04, a
+// PROPOSAL), so these leave wide room. Placeholders: TODO confirm with the game owner.
+export const MAX_TRIALS = 1000;
+export const MAX_OFF_TARGET_TAPS = 1000;
+export const MAX_BODY_BYTES = 1_000_000;
+
+// The contract (frozen v1) plus the server limits. A repeated trial index would break the trials key in
+// the database, so it is refused here with the field named, not reported later as a storage error.
+const UploadSchema = SessionMetricsSchema.superRefine((s, ctx) => {
+  if (s.trials.length > MAX_TRIALS) ctx.addIssue({ code: "custom", path: ["trials"], message: "too_big" });
+  if (s.off_target_taps.length > MAX_OFF_TARGET_TAPS)
+    ctx.addIssue({ code: "custom", path: ["off_target_taps"], message: "too_big" });
+  const seen = new Set<number>();
+  s.trials.forEach((t, n) => {
+    if (seen.has(t.i)) ctx.addIssue({ code: "custom", path: ["trials", n, "i"], message: "duplicate" });
+    seen.add(t.i);
+  });
+});
+
+// Custom issues carry their own short code in the message; zod issues keep theirs.
+function issueCode(issue: z.core.$ZodIssue) {
+  return issue.code === "custom" ? issue.message : issue.code;
+}
+
 type ErrorCode =
   | "too_many_requests"
+  | "too_large"
   | "invalid_play_link"
   | "invalid_json"
   | "invalid_session"
@@ -44,6 +71,11 @@ export async function handleSessionPost(
     return fail(401, "invalid_play_link");
   }
 
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
+    console.warn("[sessions] rejected", { error: "too_large" });
+    return fail(413, "too_large");
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -52,10 +84,10 @@ export async function handleSessionPost(
     return fail(400, "invalid_json");
   }
 
-  const parsed = SessionMetricsSchema.safeParse(body);
+  const parsed = UploadSchema.safeParse(body);
   if (!parsed.success) {
     // Field paths and issue codes only: the values could hold anything the client sent.
-    const issues = parsed.error.issues.map((i) => ({ path: i.path.join("."), code: i.code }));
+    const issues = parsed.error.issues.map((i) => ({ path: i.path.join("."), code: issueCode(i) }));
     console.warn("[sessions] rejected", { error: "invalid_session", issues: issues.length });
     return fail(400, "invalid_session", { issues });
   }

@@ -62,13 +62,19 @@ export async function handleCreatePlayLink(request: Request, deps: CreateDeps): 
 // get the same 404, for the play page to show its neutral "ask your parent" screen.
 export async function handleResolvePlayLink(code: string, deps: { store: PlayLinkStore }): Promise<Response> {
   if (!isPlayCode(code)) return fail(404, "invalid_play_link");
+  let link;
   try {
-    const link = await deps.store.resolve(hashPlayCode(code));
-    if (!link) return fail(404, "invalid_play_link");
-    const answer = PlayLinkResolvedSchema.parse({ child_id: link.childId, consent: link.consent });
-    return Response.json(answer, { headers: { "cache-control": "no-store" } });
+    link = await deps.store.resolve(hashPlayCode(code));
   } catch {
     console.error("[play-links] failed", { error: "storage_unavailable" });
     return fail(503, "storage_unavailable");
   }
+  if (!link) return fail(404, "invalid_play_link");
+  // A stored link that breaks the contract is a server fault, not an outage: told apart in the logs.
+  const answer = PlayLinkResolvedSchema.safeParse({ child_id: link.childId, consent: link.consent });
+  if (!answer.success) {
+    console.error("[play-links] failed", { error: "invalid_answer" });
+    return fail(500, "invalid_answer");
+  }
+  return Response.json(answer.data, { headers: { "cache-control": "no-store" } });
 }
