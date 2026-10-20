@@ -76,12 +76,12 @@ describe("hintStep", () => {
 
 describe("summarise", () => {
   it("adds extra moves, takes the median planning time and counts taps that were not moves", () => {
-    const rec = (planningMs: number | null, extraMoves: number, kinds: ("move" | "blocked" | "off")[]): PuzzleRecord => ({
+    const rec = (planningMs: number | null, extraMoves: number | null, kinds: ("move" | "blocked" | "off")[]): PuzzleRecord => ({
       i: 0,
       practice: false,
-      solved: true,
+      solved: extraMoves !== null,
       optimalMoves: 9,
-      moves: 9 + extraMoves,
+      moves: 9 + (extraMoves ?? 0),
       extraMoves,
       onsetMs: 0,
       firstMoveMs: planningMs,
@@ -92,6 +92,7 @@ describe("summarise", () => {
     expect(summarise([rec(1000, 0, ["move"]), rec(3000, 2, ["off", "move"]), rec(2000, 1, ["blocked"]), rec(null, 0, [])])).toEqual({
       nPuzzles: 4,
       totalExtraMoves: 3,
+      nUnsolved: 0,
       medianPlanningMs: 2000,
       offTaps: 2,
     });

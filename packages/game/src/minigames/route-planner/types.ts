@@ -28,7 +28,8 @@ export interface PuzzleRecord {
   solved: boolean;
   optimalMoves: number;
   moves: number;
-  extraMoves: number;
+  /** null when the puzzle ended unsolved: no value rather than the best possible one. */
+  extraMoves: number | null;
   /** Frame time of the requestAnimationFrame callback that first drew the puzzle. */
   onsetMs: number;
   firstMoveMs: number | null;
@@ -40,7 +41,9 @@ export interface PuzzleRecord {
 
 export interface RoutePlannerSummary {
   nPuzzles: number;
+  /** Sum over solved puzzles only. */
   totalExtraMoves: number;
+  nUnsolved: number;
   medianPlanningMs: number | null;
   offTaps: number;
 }

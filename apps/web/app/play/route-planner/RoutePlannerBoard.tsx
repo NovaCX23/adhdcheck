@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { PLAY_STRINGS } from "../[code]/strings";
+import { mountWithFallback } from "../mountGuard";
 import { mountRoutePlanner, type RoutePlannerHandle, type RoutePlannerResult } from "@adhdcheck/game";
 
 export default function RoutePlannerBoard({ onComplete }: { onComplete: (r: RoutePlannerResult) => void }) {
@@ -13,14 +15,12 @@ export default function RoutePlannerBoard({ onComplete }: { onComplete: (r: Rout
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    let cancelled = false;
     let handle: RoutePlannerHandle | undefined;
-    mountRoutePlanner(el, { onComplete: (r) => cb.current(r) }).then((h) => {
-      if (cancelled) h.destroy();
-      else handle = h;
+    const cancel = mountWithFallback(el, mountRoutePlanner(el, { onComplete: (r) => cb.current(r) }), PLAY_STRINGS.unavailable, (h) => {
+      handle = h;
     });
     return () => {
-      cancelled = true;
+      cancel();
       handle?.destroy();
     };
   }, []);

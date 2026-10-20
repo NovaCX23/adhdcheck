@@ -2,6 +2,7 @@
 // CSS (no three.js): the board is the only thing on screen while a puzzle runs, nothing else moves, and the
 // open squares next to Luma show a faint ring so the child sees where a tap goes (adhdcheck-dev skill, 4).
 // The game container takes every pointerdown; pointer-events are off on everything inside it.
+import { isPrimaryPointer } from "../../pointer";
 import { hintStep, same } from "./logic";
 import { RoutePlannerRunner, type Board } from "./runner";
 import { STRINGS } from "./strings";
@@ -175,6 +176,7 @@ export function createRoutePlannerView(parent: HTMLElement, opts: ViewOptions = 
 
   const onDown = (e: PointerEvent) => {
     e.preventDefault();
+    if (!isPrimaryPointer(e)) return; // a second finger is not a response
     runner.pointerDown(e.timeStamp, cellAt(e.clientX, e.clientY));
   };
   root.addEventListener("pointerdown", onDown);

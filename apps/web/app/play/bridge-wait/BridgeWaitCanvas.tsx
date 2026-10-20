@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { PLAY_STRINGS } from "../[code]/strings";
+import { mountWithFallback } from "../mountGuard";
 import { mountBridgeWait, type BridgeWaitHandle, type BridgeWaitResult } from "@adhdcheck/game";
 
 export default function BridgeWaitCanvas({ onComplete }: { onComplete: (r: BridgeWaitResult) => void }) {
@@ -17,19 +19,22 @@ export default function BridgeWaitCanvas({ onComplete }: { onComplete: (r: Bridg
     const q = process.env.NODE_ENV === "development" ? new URLSearchParams(window.location.search) : new URLSearchParams();
     const seed = q.get("seed");
     const trials = q.get("trials");
-    let cancelled = false;
     let handle: BridgeWaitHandle | undefined;
-    mountBridgeWait(el, {
+    const cancel = mountWithFallback(
+      el,
+      mountBridgeWait(el, {
       seed: seed ? Number(seed) : undefined,
       trials: trials ? Number(trials) : undefined,
       stopSignal: q.get("stop") === "1",
       onComplete: (r) => cb.current(r),
-    }).then((h) => {
-      if (cancelled) h.destroy();
-      else handle = h;
-    });
+    }),
+      PLAY_STRINGS.unavailable,
+      (h) => {
+        handle = h;
+      },
+    );
     return () => {
-      cancelled = true;
+      cancel();
       handle?.destroy();
     };
   }, []);

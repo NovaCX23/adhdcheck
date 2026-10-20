@@ -107,7 +107,7 @@ export class RoutePlannerRunner {
         solved,
         optimalMoves: optimal,
         moves: this.moves,
-        extraMoves: solved ? this.moves - optimal : 0,
+        extraMoves: solved ? this.moves - optimal : null,
         onsetMs: this.rel(this.onsetMs),
         firstMoveMs: this.firstMoveMs === null ? null : this.rel(this.firstMoveMs),
         planningMs: this.firstMoveMs === null ? null : this.firstMoveMs - this.onsetMs,
@@ -141,6 +141,7 @@ export class RoutePlannerRunner {
     }
     const b = this.board;
     if (this.state !== "puzzle" || !b || this.pendingBoard || this.finishedAt !== null) return "ignored";
+    if (tMs < this.onsetMs) return "ignored"; // stamped before the frame that drew the board: not a response to it
     this.lastTap = tMs;
     const kind = judgeTap(b.puzzle, b.at, cell);
     this.taps.push({ tMs: this.rel(tMs), cell, kind });

@@ -114,7 +114,8 @@ function median(xs: number[]): number | null {
 export function summarise(records: PuzzleRecord[]): RoutePlannerSummary {
   return {
     nPuzzles: records.length,
-    totalExtraMoves: records.reduce((n, r) => n + r.extraMoves, 0),
+    totalExtraMoves: records.reduce((n, r) => n + (r.extraMoves ?? 0), 0),
+    nUnsolved: records.filter((r) => r.extraMoves === null).length,
     medianPlanningMs: median(records.flatMap((r) => (r.planningMs === null ? [] : [r.planningMs]))),
     offTaps: records.reduce((n, r) => n + r.taps.filter((t: RouteTap) => t.kind !== "move").length, 0),
   };

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { PLAY_STRINGS } from "../[code]/strings";
+import { mountWithFallback } from "../mountGuard";
 import { mountTreasureChoice, type TreasureChoiceHandle, type TreasureChoiceResult } from "@adhdcheck/game";
 
 export default function TreasureChoiceCanvas({ onComplete }: { onComplete: (r: TreasureChoiceResult) => void }) {
@@ -17,18 +19,21 @@ export default function TreasureChoiceCanvas({ onComplete }: { onComplete: (r: T
     const q = process.env.NODE_ENV === "development" ? new URLSearchParams(window.location.search) : new URLSearchParams();
     const seed = q.get("seed");
     const choices = q.get("choices");
-    let cancelled = false;
     let handle: TreasureChoiceHandle | undefined;
-    mountTreasureChoice(el, {
+    const cancel = mountWithFallback(
+      el,
+      mountTreasureChoice(el, {
       seed: seed ? Number(seed) : undefined,
       choices: choices ? Number(choices) : undefined,
       onComplete: (r) => cb.current(r),
-    }).then((h) => {
-      if (cancelled) h.destroy();
-      else handle = h;
-    });
+    }),
+      PLAY_STRINGS.unavailable,
+      (h) => {
+        handle = h;
+      },
+    );
     return () => {
-      cancelled = true;
+      cancel();
       handle?.destroy();
     };
   }, []);

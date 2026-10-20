@@ -42,6 +42,7 @@ import { StarTones } from "./audio";
 import { N_STARS } from "./logic";
 import { pickStar, starLayout } from "./layout";
 import { PRACTICE_INTRO_MS, StarPathRunner, type Current, type RunState } from "./runner";
+import { isPrimaryPointer } from "../../pointer";
 import { STRINGS } from "./strings";
 import type { StarPathResult } from "./types";
 import { buildUi } from "./ui";
@@ -100,7 +101,15 @@ export function createStarPathScene(parent: HTMLElement, opts: SceneOptions): { 
   audio.prefetch();
   const tones = new StarTones();
 
-  const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+  let renderer: WebGLRenderer;
+  try {
+    renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+  } catch (err) {
+    // No WebGL: remove the DOM and audio this function already created, so the caller can show its fallback.
+    audio.close();
+    ui.destroy();
+    throw err;
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x000000, 0);
   ui.root.prepend(renderer.domElement);
@@ -353,6 +362,7 @@ export function createStarPathScene(parent: HTMLElement, opts: SceneOptions): { 
   ui.play(true);
 
   const onDown = (e: PointerEvent) => {
+    if (!isPrimaryPointer(e)) return; // a second finger is not a response
     audio.unlock(); // inside the gesture: required by iOS Safari
     tones.unlock();
     const rect = ui.root.getBoundingClientRect();
