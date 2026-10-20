@@ -186,6 +186,12 @@ function Header({ t, lang, setLang }: { t: Dict; lang: Lang; setLang: (l: Lang) 
         <div className="flex items-center gap-3">
           <LangToggle lang={lang} setLang={setLang} label={t.nav.langLabel} />
           <a
+            href="/login"
+            className="inline-flex min-h-10 items-center whitespace-nowrap rounded-full px-2 text-sm font-semibold text-moon-muted hover:text-moon focus-visible:outline-2 focus-visible:outline-glow sm:px-3"
+          >
+            {t.nav.login}
+          </a>
+          <a
             href="#descarca"
             className="btn-glow hidden min-h-10 items-center rounded-full px-5 font-display text-sm font-semibold sm:inline-flex"
           >

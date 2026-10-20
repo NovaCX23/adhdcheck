@@ -12,6 +12,8 @@ const ro = {
     science: "Știința",
     faq: "Întrebări",
     cta: "Încearcă gratuit",
+    // TODO (texts owner): placeholder label for the link to the parent area (/login).
+    login: "Intră în cont",
     langLabel: "Limba",
   },
   hero: {
@@ -232,6 +234,8 @@ const en: Dict = {
     science: "The science",
     faq: "FAQ",
     cta: "Try it free",
+    // TODO (texts owner): placeholder label for the link to the parent area (/login).
+    login: "Log in",
     langLabel: "Language",
   },
   hero: {
