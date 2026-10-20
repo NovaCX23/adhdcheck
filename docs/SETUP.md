@@ -60,7 +60,7 @@ Copy `.env.example` to `apps/web/.env.local` (gitignored) and fill the values th
 | `SUPABASE_SERVICE_ROLE_KEY` | server only |
 | `STRIPE_SECRET_KEY` | server only, Stripe test mode |
 | `STRIPE_WEBHOOK_SECRET` | server only |
-| `STRIPE_PRICE_ID` | server only: the test-mode recurring price used by `POST /api/stripe/checkout` (product and price: decision D-05) |
+| `STRIPE_PRICE_ID` | server only: the test-mode recurring price used by `POST /api/stripe/checkout` (the subscription unlocks the report download only, D-05; product and price: decision D-05b) |
 | `RESEND_API_KEY` | server only |
 | `DEMO_PARENT_EMAIL` | server only: the account that may use Reset demo (`POST /api/demo/reset`) |
 | `GAME_HARNESS` | server only: set to `1` to serve the dev game pages under `/play` (bridge-wait, star-path, treasure-choice, route-planner) in production; read at build, off by default |

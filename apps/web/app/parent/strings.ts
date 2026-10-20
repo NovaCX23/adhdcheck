@@ -46,10 +46,16 @@ export const S = {
   billing: {
     title: "Family plan",
     active: "Your plan is active.",
-    inactive: "Missions and progress tracking come with the family plan. Results and next steps are always free.",
     subscribe: "Subscribe (test mode)",
     manage: "Manage plan",
     unavailable: "Billing is not set up yet.",
+  },
+  // D-05 (DECIDED, Hatem, 2026-10-20): only the report download is paid. Placeholder wording for the
+  // texts owner (shared-texts-claims-pitch.md).
+  report: {
+    download: "Download the report (PDF)",
+    preparing: "Preparing the report…",
+    paywall: "Downloading the report comes with the family plan. The result, the next step, missions and progress stay free.",
   },
   session: {
     title: "Play a game",

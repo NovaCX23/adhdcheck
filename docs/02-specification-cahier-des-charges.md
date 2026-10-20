@@ -181,10 +181,10 @@ Open points from 06, not verified: the licence of the `face_landmarker.task` mod
 
 | ID | Requirement | Priority | Acceptance criterion | Traces to |
 |---|---|---|---|---|
-| FR-45 | Subscribe with Stripe Checkout, `mode: "subscription"`, test mode; success returns to `/dashboard?paid=1` (03 section 6). Product name and price: TODO (decision D-05). | Should | A test checkout completes and returns to the dashboard. | UN-23 |
+| FR-45 | Subscribe with Stripe Checkout, `mode: "subscription"`, test mode; success returns to `/dashboard?paid=1` (03 section 6). The subscription unlocks the report download only (D-05). Product name and price: TODO (decision D-05b). | Should | A test checkout completes and returns to the dashboard. | UN-23 |
 | FR-46 | Manage or cancel through the Stripe Customer Portal (`POST /api/stripe/portal`) (03 section 6). | Should | From the dashboard, the parent reaches the portal and cancels; status updates. | UN-23 |
 | FR-47 | Webhook writes `subscriptions.status` on `customer.subscription.updated` and `customer.subscription.deleted` (and the checkout completion event, name unverified in 03); signature verified. | Should | A replayed event with a bad signature is rejected; a valid one updates the row. | UN-23 |
-| FR-48 | Gating (PROPOSAL): the result card, the next step (FR-33 to FR-35) and data deletion are never behind the paywall. The subscription unlocks missions and progress tracking. Final split: decision D-05. | Must | With no subscription, a parent sees the full result card and next-step page. | UN-19 |
+| FR-48 | Gating (DECIDED, Hatem, 2026-10-20, D-05): everything is free for parents (games, result card, next step FR-33 to FR-35, missions, progress, data deletion) except downloading the parent report (`GET /api/reports/<sessionId>`, PDF). The report holds only what the result card shows: nickname, session date, the fixed headline and its supporting line, the fixed disclaimer, the game measures as game measures, the next step; no probability, severity or diagnosis wording. The download needs an `active` or `trialing` subscription, checked on the server; the paywall appears only at the download button, after the server answers 402. | Must | With no subscription, a parent sees the full result card and next step, and the download answers 402; with a paid plan it answers a PDF; another parent's session answers 404 even with a paid plan (`apps/web/app/api/reports/handlers.test.ts`, `apps/web/lib/report.test.ts`, `apps/web/app/parent/gating.test.ts`, `supabase/tests/database/report_access.test.sql`). | UN-19 |
 
 ### 4.5 Email notification
 
@@ -469,6 +469,7 @@ Table names from 03 section 5. Column lists are PROPOSAL, derived from the contr
 | D-01 | Positioning and class: orientation and referral support, never diagnosis; target IIa maximum, IIa expected, class I only if the output carries no diagnostic or referral purpose | **DECIDED** | Hatem, 2026-10-19 | R-01 to R-05 below |
 | D-02 | Missions are chosen by the parent (later a professional) as general wellbeing activities, never auto-prescribed from the score | **DECIDED** | Hatem, 2026-10-19 | R-03 |
 | D-03a | Result headlines: "A professional assessment is recommended" / "No specific follow-up indicated by this activity"; no ADHD probability, likelihood or severity on the parent screen | **DECIDED** | Hatem, 2026-10-19 | D-03 (supporting lines) |
+| D-05 | What is behind the paywall: everything is free for parents (games, result card, next step, missions, progress, deletion) except downloading the report. The paywall appears only when the report is ready to download (FR-48). Payment reuses the existing Stripe test-mode subscription (FR-45 to FR-47) | **DECIDED** | Hatem, 2026-10-20 | D-05b (price, product name) |
 | D-18 | Hackathon scope is one web app only: the game runs inside it at `/play` in the tablet or phone browser; native mobile and tablet apps after the hackathon | **DECIDED** | Hatem, 2026-10-19 | None |
 | D-17 | Web first, with camera and microphone in the browser game (section 4.1c), processed on the device, aggregates only; native mobile app later | **DECIDED** | Hatem, 2026-10-19 | Whether camera and microphone features ever feed the score (06 proposes no); legal review of the open points in 4.1c |
 
@@ -488,7 +489,7 @@ Residual questions from D-01 and D-02:
 |---|---|---|---|---|
 | D-03 | Supporting lines under each headline (FR-34) and disclaimer wording | `TODO.md`; 03 section 11.2 | TODO (R5) | M2, TODO |
 | D-04 | Threshold values in `thresholds.v0.json`, minimum trial count, anticipation rule | 03 section 4 (no verified norms) | TODO (R2) | M2, TODO |
-| D-05 | Price, subscription content, what is behind the paywall (FR-48 proposal) | `TODO.md` | TODO (R4 with R5) | M3, TODO |
+| D-05b | Price and product name of the subscription that unlocks the report download (what is paid is decided, D-05) | `TODO.md` | TODO (R4 with R5) | M3, TODO |
 | D-06 | Gadget: which one, and is it a medical device | `TODO.md` | TODO | After the hackathon |
 | D-07 | UI language(s) | none sourced | TODO | M1, TODO |
 | D-08 | Product name: "ADHD Check" names the condition; with the orientation positioning it also reads as a diagnostic promise, and it rules out the class I fallback (02 Part 2.7, 2.8) | depends on R-01 | TODO | Before the pitch, TODO |
