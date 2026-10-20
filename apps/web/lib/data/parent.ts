@@ -62,11 +62,18 @@ export function toSessionResult(row: SessionRow): SessionResult {
   };
 }
 
-// FR-31: nickname and birth year only (NFR-01). Returns null when the input is not acceptable.
-export function validateNewChild(input: unknown): { nickname: string; birth_year: number } | null {
+// Intended purpose: children aged 6 to 12 (docs/02 section 2). The add-child form uses the same bounds.
+export const MIN_AGE = 6;
+export const MAX_AGE = 12;
+
+// FR-31: nickname and birth year only (NFR-01). Returns null when the input is not acceptable,
+// including a birth year outside the 6 to 12 age range (checked on the server, not only in the form).
+export function validateNewChild(input: unknown, now: Date = new Date()): { nickname: string; birth_year: number } | null {
   const { nickname, birth_year } = (input ?? {}) as { nickname?: unknown; birth_year?: unknown };
   if (typeof nickname !== "string" || nickname.trim().length === 0) return null;
   if (typeof birth_year !== "number" || !Number.isInteger(birth_year)) return null;
+  const year = now.getUTCFullYear();
+  if (birth_year < year - MAX_AGE || birth_year > year - MIN_AGE) return null;
   return { nickname: nickname.trim(), birth_year };
 }
 

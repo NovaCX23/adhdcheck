@@ -58,4 +58,14 @@ describe("validateNewChild (FR-31)", () => {
   ])("refuses %j", (input) => {
     expect(validateNewChild(input)).toBeNull();
   });
+
+  // Intended purpose: children aged 6 to 12 (docs/02 section 2). With a birth year only, the
+  // accepted years are (current year - 12) to (current year - 6), as in the add-child form.
+  const now = new Date("2026-10-20T12:00:00Z");
+  it.each([2014, 2017, 2020])("accepts birth year %i in 2026 (age 6 to 12)", (birth_year) => {
+    expect(validateNewChild({ nickname: "Fox", birth_year }, now)).toEqual({ nickname: "Fox", birth_year });
+  });
+  it.each([2013, 2021, 1990, 2026])("refuses birth year %i in 2026 (outside 6 to 12)", (birth_year) => {
+    expect(validateNewChild({ nickname: "Fox", birth_year }, now)).toBeNull();
+  });
 });
