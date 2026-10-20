@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type Stripe from "stripe";
 import { z } from "zod";
 import { reportReadyEmail, type EmailLang } from "../../../lib/email/messages";
@@ -34,6 +35,27 @@ export function langFromRequest(request: Request): EmailLang {
 const Uuid = z.string().refine(isUuid);
 const CHECKOUT_BUCKET_MS = 30 * 60 * 1000;
 const CheckoutBody = z.strictObject({ sessionId: Uuid });
+
+// R7-3. Stripe answers an error when an idempotency key is reused with different parameters
+// (https://docs.stripe.com/api/idempotent_requests) and advises against personal identifiers in keys; a key is
+// reused only for an identical call (https://docs.stripe.com/error-low-level). So the key is a SHA-256 over every
+// parameter that goes to Stripe, plus the half hour bucket and the newest closed checkout (R5-3): it changes when any
+// of them changes, it is the same for two identical requests (two tabs), and it holds no id or address in clear.
+export function checkoutIdempotencyKey(p: {
+  priceId: string;
+  parentId: string;
+  sessionId: string;
+  lang: EmailLang;
+  successUrl: string;
+  cancelUrl: string;
+  bucket: number;
+  closedId: string | null;
+}): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify([p.priceId, p.parentId, p.sessionId, p.lang, p.successUrl, p.cancelUrl, p.bucket, p.closedId]))
+    .digest("hex");
+  return `report-checkout/${digest}`;
+}
 
 export type CheckoutDeps = {
   getParentId(): Promise<string | null>;
@@ -121,15 +143,26 @@ export async function handleCheckout(request: Request, deps: CheckoutDeps): Prom
     console.error("[stripe] checkout failed", { error: "storage_unavailable" });
     return fail(503, "storage_unavailable");
   }
+  const successUrl = `${siteUrl}/parent/${own.childId}?report=paid`;
+  const cancelUrl = `${siteUrl}/parent/${own.childId}`;
   try {
     const session = await deps.createCheckoutSession({
       priceId: deps.priceId,
       parentId,
       sessionId,
       lang,
-      successUrl: `${siteUrl}/parent/${own.childId}?report=paid`,
-      cancelUrl: `${siteUrl}/parent/${own.childId}`,
-      idempotencyKey: `report-checkout/${parentId}/${sessionId}/${Math.floor(Date.now() / CHECKOUT_BUCKET_MS)}/${closedId ?? "none"}`,
+      successUrl,
+      cancelUrl,
+      idempotencyKey: checkoutIdempotencyKey({
+        priceId: deps.priceId,
+        parentId,
+        sessionId,
+        lang,
+        successUrl,
+        cancelUrl,
+        bucket: Math.floor(Date.now() / CHECKOUT_BUCKET_MS),
+        closedId,
+      }),
     });
     if (!session.url) throw new Error("checkout session without url");
     // The webhook also records the purchase from the metadata, so a lost insert here loses nothing.

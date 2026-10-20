@@ -189,7 +189,8 @@ export class LanternWatchRunner {
             return "response";
           }
         }
-        if (this.measured() && tMs >= this.t0) {
+        // finishAt !== null: the wait after the last trial, no trial is current, so a stray tap is not an ISI tap (R7-1)
+        if (this.measured() && tMs >= this.t0 && this.finishAt === null) {
           const visible = !!c && c.onset !== null && tMs >= c.onset && (c.hiddenAt === null || tMs < c.hiddenAt);
           this.offTarget.push({ t_ms: tMs - this.t0, during: visible ? "stimulus" : "isi" });
           return "off-target";

@@ -111,3 +111,14 @@ describe("R6-8 loginPathFor encodes the page it carries", () => {
     expect(login).not.toContain("&x=");
   });
 });
+
+// R7-2: the same-origin check itself, by name.
+describe("R7-2 same-origin check", () => {
+  it("refuses a protocol-relative URL and an absolute URL on another site", () => {
+    expect(safeNextPath("//evil.com/x")).toBe("/");
+    expect(safeNextPath("https://evil.com/x")).toBe("/");
+  });
+  it("keeps a path on this site as it is (control)", () => {
+    expect(safeNextPath("/parent/abc?x=1#h")).toBe("/parent/abc?x=1#h");
+  });
+});
