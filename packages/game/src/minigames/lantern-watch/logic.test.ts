@@ -9,6 +9,7 @@ import {
   median,
   normalizePointerType,
 } from "./logic";
+import { WAIT_MS_MAX, WAIT_MS_MIN } from "../wake-fireflies/logic";
 
 describe("Lantern Watch task parameters (research/03 section 11.1, research/04 section 5)", () => {
   it("declares the contract v1 values", () => {
@@ -69,17 +70,17 @@ describe("buildSchedule (seeded, fixed go/no-go counts per block)", () => {
   });
 });
 
-describe("buildCalibrationSchedule (Wake the fireflies)", () => {
-  it("has calibration_trials entries, all calibration, ISI in range", () => {
-    const c = buildCalibrationSchedule(DEFAULT_TASK, 1234);
+describe("buildCalibrationSchedule (Wake the fireflies, rules of PR #27)", () => {
+  it("has calibration_trials entries with #27's wait range, never the same lantern twice in a row", () => {
+    const c = buildCalibrationSchedule(DEFAULT_TASK.calibrationTrials, 1234);
     expect(c).toHaveLength(10);
     for (const t of c) {
-      expect(t.type).toBe("calibration");
-      expect(t.isiMs).toBeGreaterThanOrEqual(900);
-      expect(t.isiMs).toBeLessThan(1500);
+      expect(t.waitMs).toBeGreaterThanOrEqual(WAIT_MS_MIN);
+      expect(t.waitMs).toBeLessThan(WAIT_MS_MAX);
       expect(t.lantern).toBeLessThan(LANTERNS);
     }
-    expect(buildCalibrationSchedule(DEFAULT_TASK, 1234)).toEqual(c);
+    for (let k = 1; k < c.length; k++) expect(c[k]?.lantern).not.toBe(c[k - 1]?.lantern);
+    expect(buildCalibrationSchedule(10, 1234)).toEqual(c);
   });
 });
 

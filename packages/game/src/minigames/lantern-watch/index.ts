@@ -5,7 +5,7 @@ export {
   ANTICIPATION_MS,
   DEFAULT_TASK,
   LANTERNS,
-  buildCalibrationSchedule,
+  buildCalibrationSchedule as buildLanternCalibrationSchedule,
   buildSchedule as buildLanternSchedule,
   classify as classifyLanternTrial,
 } from "./logic";

@@ -19,7 +19,7 @@ export default function LanternWatchCanvas({ onComplete }: { onComplete: (m: Ses
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // Dev query parameters (?seed=, ?blocks=, ?trials=) only apply in development builds.
+    // Dev query parameters (?seed=, ?blocks=, ?trials=, ?stim= for screenshots) only apply in development builds.
     const q = process.env.NODE_ENV === "development" ? new URLSearchParams(window.location.search) : new URLSearchParams();
     const num = (k: string) => {
       const v = q.get(k);
@@ -33,6 +33,7 @@ export default function LanternWatchCanvas({ onComplete }: { onComplete: (m: Ses
         seed: num("seed"),
         blocks: num("blocks"),
         trialsPerBlock: num("trials"),
+        stimulusMs: num("stim"),
         onComplete: (m) => cb.current(m),
       }),
       PLAY_STRINGS.unavailable,

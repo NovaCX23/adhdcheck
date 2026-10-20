@@ -58,8 +58,11 @@ const LEAVE_MS = 240;
 const LIGHT_ON = 4.2;
 const FIREFLY_SCALE = 1.55;
 
-/** Luma sits on a big lily pad in the near river, front left, watching the lanterns. */
-const LUMA_POS = new Vector3(-1.95, WATER_Y + 0.05, 2.5);
+/** Luma sits on a big lily pad in the near river, front left, watching the lanterns. Portrait: closer to the
+ * middle and nearer the camera, so Luma stays whole on a narrow screen and fills the lower half. */
+const LUMA_LANDSCAPE = new Vector3(-1.95, WATER_Y + 0.05, 2.5);
+const LUMA_PORTRAIT = new Vector3(-1.05, WATER_Y + 0.05, 3.6);
+const MOTH_SCALE = 0.74;
 const VIEW_DIR = new Vector3(0, 0.34, 1).normalize();
 
 const easeOut = (t: number) => 1 - Math.pow(1 - Math.min(Math.max(t, 0), 1), 3);
@@ -128,7 +131,9 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
   // Luma's lily pad.
   const pad = new Mesh(new CylinderGeometry(1, 1, 0.06, 28, 1, false, 0.5, Math.PI * 2 - 0.7), new MeshToonMaterial({ color: new Color(0x3fae6a), gradientMap: grad }));
   pad.scale.set(0.85, 1, 0.72);
-  pad.position.set(LUMA_POS.x, WATER_Y + 0.02, LUMA_POS.z);
+  const lumaPos = LUMA_LANDSCAPE.clone();
+  const placePad = () => pad.position.set(lumaPos.x, WATER_Y + 0.02, lumaPos.z);
+  placePad();
   pad.rotation.y = 0.6;
   outline(pad, outlineMat, 1.03);
   scene.add(pad);
@@ -189,7 +194,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
     const go = trial.type !== "nogo";
     l.glass.color.copy(go ? GO_GLASS : NOGO_GLASS);
     l.halo.color.copy(go ? GO_HALO : NOGO_HALO);
-    l.halo.opacity = go ? 1 : 0.7;
+    l.halo.opacity = go ? 1 : 0.95;
     lampLight.color.copy(go ? GO_HALO : NOGO_HALO);
     lampLight.intensity = go ? LIGHT_ON : LIGHT_ON * 0.55;
     lampLight.position.set(l.centre.x, l.centre.y + 0.2, l.centre.z + 0.9);
@@ -203,8 +208,9 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
       moth.root.visible = false;
     } else {
       moth.root.visible = true;
-      moth.root.position.set(l.centre.x, l.centre.y + 0.02, l.centre.z + 0.4);
-      moth.root.scale.setScalar(1);
+      // Smaller than the glass, low on its front, so the blue glow stays visible around the moth.
+      moth.root.position.set(l.centre.x, l.centre.y - 0.08, l.centre.z + 0.42);
+      moth.root.scale.setScalar(MOTH_SCALE);
       firefly.root.visible = flight !== null; // a firefly still flying to Luma finishes its flight
     }
   };
@@ -218,7 +224,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
     lit = null;
   };
 
-  const lumaHead = () => new Vector3(LUMA_POS.x, LUMA_POS.y + 1.55, LUMA_POS.z);
+  const lumaHead = () => new Vector3(lumaPos.x, lumaPos.y + 1.55, lumaPos.z);
 
   let built: RunData | null = null;
   const runner = new LanternWatchRunner(
@@ -247,6 +253,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
             setMode("hop", ts);
             audio.play("ready", 0.55);
             break;
+          case "calib-practice":
           case "calib":
           case "practice":
           case "trials":
@@ -291,9 +298,6 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
         flight = { from: firefly.root.position.clone(), start: lastTs };
         leaving = null;
         handTarget = null;
-      },
-      onHint: (_ts, trial) => {
-        handTarget = { lantern: trial.lantern, mode: "press" };
       },
       onBreakReady: () => ui.play(true),
       onComplete: (data) => {
@@ -383,8 +387,10 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
     viewH = h;
     const aspect = w / h;
     const portrait = aspect < 1;
+    lumaPos.copy(portrait ? LUMA_PORTRAIT : LUMA_LANDSCAPE);
+    placePad();
     camera.fov = portrait ? 52 : 40;
-    const halfW = portrait ? 2.9 : 3.9;
+    const halfW = portrait ? 2.45 : 3.9;
     const tanH = Math.tan((camera.fov * Math.PI) / 360);
     const d = Math.max(7.5, halfW / (tanH * aspect));
     camera.aspect = aspect;
@@ -458,7 +464,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
       lift += 0.16 * Math.sin(Math.PI * k);
       armL = armR = Math.max(armL, 1.2 * Math.sin(Math.PI * k));
     }
-    luma.root.position.set(LUMA_POS.x, LUMA_POS.y + lift, LUMA_POS.z);
+    luma.root.position.set(lumaPos.x, lumaPos.y + lift, lumaPos.z);
     luma.root.rotation.y = turn;
     luma.squash.scale.set(sx, sy, sx);
     (luma.arms[0] as Group).rotation.z = -armL;
@@ -473,7 +479,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
     let eyeY = mode === "rest" ? Math.min(blink, 0.45) : blink;
     if (ts < happyUntil || mode === "celebrate") eyeY = Math.min(eyeY, 0.55);
     for (const e of luma.eyes) e.scale.y = eyeY;
-    world.shadow.position.set(LUMA_POS.x, WATER_Y + 0.06, LUMA_POS.z + 0.05);
+    world.shadow.position.set(lumaPos.x, WATER_Y + 0.06, lumaPos.z + 0.05);
     world.shadow.scale.setScalar(1.3 * (1 - Math.min(lift, 0.6) * 0.6));
   };
 
@@ -558,7 +564,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
       // Shrink away while rising: the outline hulls are opaque, so fading opacity would leave a dark ball.
       if (leaving.what === "moth") {
         moth.root.position.set(leaving.from.x + e * 0.25, leaving.from.y + e * 0.4, leaving.from.z);
-        moth.root.scale.setScalar(Math.max(0.001, 1 - e));
+        moth.root.scale.setScalar(Math.max(0.001, MOTH_SCALE * (1 - e)));
       } else {
         firefly.root.position.set(leaving.from.x, leaving.from.y + e * 0.45, leaving.from.z);
         firefly.root.scale.setScalar(Math.max(0.001, FIREFLY_SCALE * (1 - e)));

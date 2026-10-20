@@ -10,6 +10,8 @@ export interface LanternWatchOptions {
   /** Dev runs only: fewer blocks or trials per block. The task block of the payload always matches what ran. */
   blocks?: number;
   trialsPerBlock?: number;
+  /** Dev runs only (screenshots): a longer stimulus. Reported as task.stimulus_ms in the payload. */
+  stimulusMs?: number;
   /** URL prefix of the self-hosted sound samples. Default "/games/bridge-wait" (shared with Bridge Wait). */
   assetBase?: string;
   onComplete?: (metrics: SessionMetrics) => void;
@@ -20,9 +22,14 @@ export interface LanternWatchHandle {
   destroy: () => void;
 }
 
-export function taskFor(opts: Pick<LanternWatchOptions, "blocks" | "trialsPerBlock">): TaskConfig {
+export function taskFor(opts: Pick<LanternWatchOptions, "blocks" | "trialsPerBlock" | "stimulusMs">): TaskConfig {
   const pos = (v: number | undefined, d: number) => (v !== undefined && Number.isInteger(v) && v > 0 ? v : d);
-  return { ...DEFAULT_TASK, blocks: pos(opts.blocks, DEFAULT_TASK.blocks), trialsPerBlock: pos(opts.trialsPerBlock, DEFAULT_TASK.trialsPerBlock) };
+  return {
+    ...DEFAULT_TASK,
+    blocks: pos(opts.blocks, DEFAULT_TASK.blocks),
+    trialsPerBlock: pos(opts.trialsPerBlock, DEFAULT_TASK.trialsPerBlock),
+    stimulusMs: pos(opts.stimulusMs, DEFAULT_TASK.stimulusMs),
+  };
 }
 
 export async function mountLanternWatch(parent: HTMLElement, opts: LanternWatchOptions): Promise<LanternWatchHandle> {

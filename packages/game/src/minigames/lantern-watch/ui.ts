@@ -18,6 +18,7 @@ border:6px solid #fffdf7;transition:transform .25s cubic-bezier(.16,1,.3,1),opac
 .lw-play::after{content:"";position:absolute;left:50%;top:50%;margin:-26px 0 0 -16px;border-left:44px solid #fffdf7;border-top:26px solid transparent;border-bottom:26px solid transparent;filter:drop-shadow(0 3px 0 rgba(22,122,115,.6))}
 .lw-play::before{content:"";position:absolute;inset:-18px;border-radius:50%;border:5px solid rgba(255,253,247,.55);animation:lw-ring 1.8s ease-out infinite}
 .lw-play.off{opacity:0;transform:scale(.4)}
+@media (orientation: portrait){.lw-play{top:86%}}
 @keyframes lw-ring{0%{transform:scale(.85);opacity:.9}100%{transform:scale(1.3);opacity:0}}
 .lw-hand{position:absolute;left:0;top:0;width:96px;height:118px;opacity:0;transition:opacity .2s ease-out;will-change:transform}
 .lw-hand.on{opacity:1}

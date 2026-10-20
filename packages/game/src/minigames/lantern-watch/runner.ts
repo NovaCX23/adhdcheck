@@ -4,8 +4,10 @@
 // same callback, so ts is its onset (research/03 section 2.3 item 4). pointerDown() takes the pointerdown
 // event.timeStamp, never a click and never the time the handler runs.
 //
-// Sequence: start tap, "Wake the fireflies" calibration (FR-03), practice (not recorded, FR-02), then
-// task.blocks blocks with a child-paced break between blocks, then done.
+// Sequence: start tap, "Wake the fireflies" calibration (FR-03) with its own two practice fireflies, the go/no-go
+// practice (not recorded, FR-02), then task.blocks blocks with a child-paced break between blocks, then done.
+// Calibration follows the rules of mini-game 0, PR #27 (../wake-fireflies/logic.ts): its waits, its practice
+// count, its response window, its trial mapping (hit or omission, omission at 0, 0) and its summary.
 import type { Trial } from "@adhdcheck/contracts";
 import {
   buildCalibrationSchedule,
@@ -17,11 +19,10 @@ import {
   type TrialType,
 } from "./logic";
 import type { OffTargetTap } from "./session";
+import { PRACTICE_TRIALS as CALIB_PRACTICE_TRIALS, RESPONSE_WINDOW_MS, toContractTrial } from "../wake-fireflies/logic";
 
 // TODO: design choices, no sourced value (research/03 and 04 give none of these).
 export const CALIB_INTRO_MS = 2600;
-/** A calibration firefly stays lit until tapped; after this long the practice hand shows where to tap. */
-export const CALIB_HINT_MS = 3000;
 export const PRACTICE_INTRO_MS = 2600;
 export const BLOCK_INTRO_MS = 2400;
 /** The break between blocks lasts at least this long; then a tap on the play button continues. */
@@ -34,7 +35,7 @@ export const PRACTICE: ReadonlyArray<{ type: "go" | "nogo"; lantern: number }> =
   { type: "nogo", lantern: 1 },
 ];
 
-export type RunState = "intro" | "calib-intro" | "calib" | "practice-intro" | "practice" | "block-intro" | "trials" | "break" | "done";
+export type RunState = "intro" | "calib-intro" | "calib-practice" | "calib" | "practice-intro" | "practice" | "block-intro" | "trials" | "break" | "done";
 export type Phase = "calibration" | "practice" | "task";
 
 export interface ActiveTrial {
@@ -75,8 +76,6 @@ export interface RunnerHooks {
   onHide?: (ts: number, trial: ActiveTrial) => void;
   /** The first on-target tap of a trial (hit, commission or calibration tap). */
   onResponse?: (tMs: number, trial: ActiveTrial) => void;
-  /** A calibration firefly has waited CALIB_HINT_MS. */
-  onHint?: (ts: number, trial: ActiveTrial) => void;
   onBreakReady?: (ts: number) => void;
   onComplete?: (data: RunData) => void;
 }
@@ -89,13 +88,14 @@ export class LanternWatchRunner {
   private readonly anticipationMs: number | null;
   private readonly hooks: RunnerHooks;
   private readonly calib: CalibrationTrial[];
+  private readonly calibPractice: CalibrationTrial[];
+  private calibRecords: Trial[] = [];
   private readonly schedule: ScheduledTrial[];
   private readonly records: Trial[] = [];
   private readonly offTarget: OffTargetTap[] = [];
   private startRequested = false;
   private continueRequested = false;
   private breakReady = false;
-  private hinted = false;
   private t0 = 0;
   private since = 0;
   private idx = -1;
@@ -106,7 +106,8 @@ export class LanternWatchRunner {
     this.task = cfg.task;
     this.anticipationMs = cfg.anticipationMs;
     this.hooks = hooks;
-    this.calib = buildCalibrationSchedule(cfg.task, cfg.seed);
+    this.calib = buildCalibrationSchedule(cfg.task.calibrationTrials, cfg.seed);
+    this.calibPractice = buildCalibrationSchedule(CALIB_PRACTICE_TRIALS, (cfg.seed ^ 0x5bd1e995) >>> 0);
     this.schedule = buildSchedule(cfg.task, cfg.seed);
   }
 
@@ -124,8 +125,9 @@ export class LanternWatchRunner {
     return this.cur;
   }
 
+  /** Off-target taps are recorded in the go/no-go blocks only; PR #27 does not record them in calibration. */
   private measured(): boolean {
-    return this.state === "calib" || this.state === "trials";
+    return this.state === "trials";
   }
 
   pointerDown(tMs: number, x: number, y: number, lantern: number | null): TapKind {
@@ -138,12 +140,14 @@ export class LanternWatchRunner {
         if (this.continueRequested || tMs - this.since < BREAK_MIN_MS) return "ignored";
         this.continueRequested = true;
         return "continue";
+      case "calib-practice":
       case "calib":
       case "practice":
       case "trials": {
         const c = this.cur;
         if (c && c.onset !== null && tMs >= c.onset && !c.responded && lantern === c.lantern) {
-          const inWindow = c.phase === "calibration" || tMs < c.onset + this.task.stimulusMs + c.isiMs;
+          const window = c.type === "calibration" ? RESPONSE_WINDOW_MS : this.task.stimulusMs + c.isiMs;
+          const inWindow = tMs < c.onset + window;
           if (inWindow) {
             c.responded = true;
             c.rtMs = tMs - c.onset;
@@ -176,10 +180,11 @@ export class LanternWatchRunner {
       case "calib-intro":
         if (ts - this.since >= CALIB_INTRO_MS) {
           this.idx = -1;
-          this.setState("calib", ts);
+          this.setState("calib-practice", ts);
           this.nextCalibration(ts);
         }
         return;
+      case "calib-practice":
       case "calib":
         this.frameCalibration(ts);
         return;
@@ -221,18 +226,34 @@ export class LanternWatchRunner {
     this.hooks.onState?.(s, ts);
   }
 
-  // ---- calibration: dark ISI, then the firefly stays lit until tapped ----
+  // ---- calibration (PR #27 rules): dark wait, then the firefly is lit until tapped or RESPONSE_WINDOW_MS ----
   private nextCalibration(ts: number) {
     this.idx += 1;
-    const c = this.calib[this.idx];
+    const practice = this.state === "calib-practice";
+    const list = practice ? this.calibPractice : this.calib;
+    const c = list[this.idx];
     if (!c) {
       this.cur = null;
+      this.idx = -1;
+      if (practice) {
+        this.setState("calib", ts);
+        this.nextCalibration(ts);
+        return;
+      }
+      if (!this.calibRecords.some((t) => t.outcome === "hit")) {
+        // No firefly tapped at all: the contract cannot carry a calibration without a median (#27 returns null),
+        // so the round is run again and only the new round is recorded. TODO team: design choice.
+        this.calibRecords = [];
+        this.setState("calib", ts);
+        this.nextCalibration(ts);
+        return;
+      }
+      this.records.push(...this.calibRecords.map((t, i) => ({ ...t, i })));
       this.setState("practice-intro", ts);
       return;
     }
-    this.hinted = false;
-    this.cur = this.makeTrial("calibration", "calibration", 0, c.lantern, c.isiMs, this.idx);
-    this.since = ts; // start of the dark interval
+    this.cur = this.makeTrial(practice ? "practice" : "calibration", "calibration", 0, c.lantern, c.waitMs, this.idx);
+    this.since = ts; // start of the dark wait
   }
 
   private frameCalibration(ts: number) {
@@ -242,15 +263,18 @@ export class LanternWatchRunner {
       if (ts - this.since >= c.isiMs) this.show(c, ts);
       return;
     }
-    if (c.responded) {
+    if (c.responded || ts - c.onset >= RESPONSE_WINDOW_MS) {
       this.hide(c, ts);
-      this.record(c);
+      if (c.phase === "calibration") {
+        this.calibRecords.push(
+          toContractTrial(
+            { i: this.calibRecords.length, onsetMs: c.onset, tapMs: c.responded ? c.onset + (c.rtMs as number) : null, x: c.x, y: c.y },
+            this.t0,
+            RESPONSE_WINDOW_MS,
+          ),
+        );
+      }
       this.nextCalibration(ts);
-      return;
-    }
-    if (!this.hinted && ts - c.onset >= CALIB_HINT_MS) {
-      this.hinted = true;
-      this.hooks.onHint?.(ts, c);
     }
   }
 

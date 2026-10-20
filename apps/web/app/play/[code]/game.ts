@@ -13,7 +13,7 @@ export type SessionGame = (el: HTMLElement, childId: string, consent: Consent) =
 
 /**
  * Lantern Watch. `consent` is accepted but no sensor is started: packages/sensors has no capture yet and
- * SessionMetrics v1 has no camera or microphone block (PC-04 proposed), so getUserMedia is never called (FR-70).
+ * SessionMetrics v1 has no camera or microphone block (PC-04 proposed), so the camera and microphone are never requested (FR-70).
  * If the 3D game cannot start (no WebGL), the calm "ask your parent" sentence replaces it and the promise never
  * resolves, so nothing is uploaded.
  */

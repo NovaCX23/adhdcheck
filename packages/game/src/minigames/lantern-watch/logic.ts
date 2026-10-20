@@ -3,6 +3,7 @@
 // go_probability 0.8 with fixed counts shuffled by a seeded PRNG, stimulus 500 ms, ISI uniform 900 to 1500 ms,
 // 10 calibration trials). Those values are themselves design choices of the research docs, not norms.
 import { mulberry32 } from "../bridge-wait/logic";
+import { buildSchedule as buildWakeSchedule } from "../wake-fireflies/logic";
 
 export type TrialType = "go" | "nogo" | "calibration";
 export type Outcome = "hit" | "omission" | "correct_reject" | "commission" | "anticipation";
@@ -47,8 +48,8 @@ export interface ScheduledTrial {
 
 export interface CalibrationTrial {
   type: "calibration";
-  /** Dark interval before this firefly lights. */
-  isiMs: number;
+  /** Dark pause before this firefly lights (PR #27 wait range). */
+  waitMs: number;
   lantern: number;
 }
 
@@ -73,10 +74,22 @@ export function buildSchedule(cfg: TaskConfig, seed: number): ScheduledTrial[] {
   return out;
 }
 
-/** Calibration: one firefly per trial, no no-go. The ISI range is borrowed from the task (TODO: design choice). */
-export function buildCalibrationSchedule(cfg: TaskConfig, seed: number): CalibrationTrial[] {
+/**
+ * Calibration (Wake the fireflies) uses the rules of mini-game 0, PR #27 (../wake-fireflies/logic.ts): its jittered
+ * waits come from that schedule. Only the lantern choice is ours (three lanterns, never the same twice in a row,
+ * the same rule as #27 applies to its five fireflies).
+ */
+export function buildCalibrationSchedule(count: number, seed: number): CalibrationTrial[] {
+  const waits = buildWakeSchedule({ seed, count });
   const rnd = mulberry32((seed ^ 0x2c1b3c6d) >>> 0);
-  return Array.from({ length: cfg.calibrationTrials }, () => ({ type: "calibration", isiMs: isi(cfg, rnd), lantern: lantern(rnd) }));
+  let prev = -1;
+  return waits.map((w) => {
+    let k = Math.min(LANTERNS - 2, Math.floor(rnd() * (LANTERNS - 1)));
+    if (prev < 0) k = lantern(rnd);
+    else if (k >= prev) k += 1;
+    prev = k;
+    return { type: "calibration", waitMs: w.waitMs, lantern: k };
+  });
 }
 
 export function classify(type: TrialType, responded: boolean, rtMs: number | null, anticipationMs: number | null): Outcome {

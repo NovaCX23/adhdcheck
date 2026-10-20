@@ -103,6 +103,7 @@ describe("LanternWatchRunner, a child who taps every firefly and no moth", () =>
     const seq = states.map((s) => s.s).filter((s, k, a) => s !== a[k - 1]);
     expect(seq).toEqual([
       "calib-intro",
+      "calib-practice",
       "calib",
       "practice-intro",
       "practice",
@@ -195,6 +196,46 @@ describe("LanternWatchRunner, errors and off-target taps", () => {
   it("classifies anticipations against the threshold when one is configured", () => {
     const { data } = sim({ task: small, anticipationMs: 150, child: (tr, on) => [{ t: on + 60, lantern: tr.lantern }] });
     for (const t of data.trials.filter((x) => x.type !== "calibration")) expect(t.outcome).toBe("anticipation");
+  });
+
+  it("calibration follows PR #27: a firefly left untapped for RESPONSE_WINDOW_MS is an omission at 0, 0", () => {
+    let n = 0;
+    const { data } = sim({
+      task: small,
+      // Calibration: skip the 2nd and 5th measured fireflies; tap everything else.
+      child: (tr, on) => {
+        if (tr.phase === "calibration" && (n++ === 1 || n === 5)) return [];
+        return tr.type === "nogo" ? [] : [{ t: on + 400, lantern: tr.lantern }];
+      },
+    });
+    const cal = data.trials.filter((t) => t.type === "calibration");
+    expect(cal).toHaveLength(10);
+    expect(cal.filter((t) => t.outcome === "omission")).toHaveLength(2);
+    for (const t of cal.filter((x) => x.outcome === "omission")) expect(t).toMatchObject({ responded: false, rt_ms: null, x: 0, y: 0 });
+  });
+
+  it("calibration taps away from the lit lantern are not recorded (PR #27 rule)", () => {
+    const { data } = sim({
+      task: small,
+      child: (tr, on) =>
+        tr.phase === "calibration" ? [{ t: on + 100, lantern: null }, { t: on + 400, lantern: tr.lantern }] : tr.type === "nogo" ? [] : [{ t: on + 400, lantern: tr.lantern }],
+    });
+    expect(data.off_target_taps).toEqual([]);
+  });
+
+  it("repeats the calibration round when no firefly at all was tapped, recording only the last round", () => {
+    let round = 0;
+    const { data, states } = sim({
+      task: small,
+      child: (tr, on) => {
+        if (tr.phase === "calibration") return round >= 10 ? [{ t: on + 300, lantern: tr.lantern }] : (round++, []);
+        return tr.type === "nogo" ? [] : [{ t: on + 400, lantern: tr.lantern }];
+      },
+    });
+    const cal = data.trials.filter((t) => t.type === "calibration");
+    expect(cal).toHaveLength(10);
+    expect(cal.every((t) => t.outcome === "hit")).toBe(true);
+    expect(states.filter((s) => s.s === "calib").length).toBe(2);
   });
 
   it("does not leave a break before BREAK_MIN_MS, even on a tap", () => {

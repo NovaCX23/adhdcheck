@@ -6,7 +6,8 @@ import {
   type SessionMetrics,
   type Trial,
 } from "@adhdcheck/contracts";
-import { median, type TaskConfig } from "./logic";
+import { summarise } from "../wake-fireflies/logic";
+import type { TaskConfig } from "./logic";
 
 /** `task.version` of this engine. Bump when the trial loop or a parameter changes. */
 export const TASK_VERSION = "0.1.0";
@@ -26,12 +27,15 @@ export function taskBlock(cfg: TaskConfig): SessionMetrics["task"] {
   };
 }
 
-/** FR-03: n is the number of calibration trials run; the median is over the ones answered. */
+/**
+ * FR-03, with the summary of mini-game 0 (PR #27, ../wake-fireflies/logic.ts summarise): n is the number of
+ * calibration trials run, the median uses hits only. #27 returns null when nothing was hit; the contract
+ * cannot carry that, so building refuses (the runner repeats a calibration round with no hit).
+ */
 export function calibrationBlock(trials: readonly Trial[]): SessionMetrics["calibration"] {
-  const cal = trials.filter((t) => t.type === "calibration");
-  const m = median(cal.filter((t) => t.responded && t.rt_ms !== null).map((t) => t.rt_ms as number));
-  if (m === null) throw new Error("no calibration response recorded");
-  return { median_rt_ms: m, n: cal.length };
+  const c = summarise(trials.filter((t) => t.type === "calibration"));
+  if (c === null) throw new Error("no calibration response recorded");
+  return c;
 }
 
 export interface SessionInput {
