@@ -16,11 +16,31 @@ function post(path: string, body = "{}", headers: Record<string, string> = { "co
 afterEach(() => vi.restoreAllMocks());
 
 describe("POST /api/stripe/checkout (FR-45)", () => {
-  function deps({ parentId = PARENT as string | null, priceId = PRICE } = {}) {
+  function deps({ parentId = PARENT as string | null, priceId = PRICE, status = null as string | null } = {}) {
     const getOrCreateCustomer = vi.fn().mockResolvedValue(CUSTOMER);
     const createCheckoutSession = vi.fn().mockResolvedValue({ url: "https://checkout.example.test/s" });
-    return { d: { getParentId: async () => parentId, priceId, getOrCreateCustomer, createCheckoutSession }, getOrCreateCustomer, createCheckoutSession };
+    const getSubscriptionStatus = vi.fn().mockResolvedValue(status);
+    return {
+      d: { getParentId: async () => parentId, priceId, getSubscriptionStatus, getOrCreateCustomer, createCheckoutSession },
+      getOrCreateCustomer,
+      createCheckoutSession,
+    };
   }
+
+  it.each(["active", "trialing"])("answers 409 already_subscribed when the stored status is %s", async (status) => {
+    const { d, createCheckoutSession, getOrCreateCustomer } = deps({ status });
+    const res = await handleCheckout(post("/api/stripe/checkout"), d);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "already_subscribed" });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+    expect(getOrCreateCustomer).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "canceled", "past_due", "incomplete_expired"])("still creates a checkout when the stored status is %s", async (status) => {
+    const { d, createCheckoutSession } = deps({ status });
+    expect((await handleCheckout(post("/api/stripe/checkout"), d)).status).toBe(200);
+    expect(createCheckoutSession).toHaveBeenCalledTimes(1);
+  });
 
   it("creates a subscription checkout for the parent's customer and answers its url", async () => {
     const { d, getOrCreateCustomer, createCheckoutSession } = deps();
@@ -106,10 +126,11 @@ describe("POST /api/stripe/webhook (FR-47)", () => {
     });
   }
 
-  function deps() {
+  function deps(current = "active") {
     const record = vi.fn<(u: SubscriptionUpdate) => Promise<string>>().mockResolvedValue("updated");
     const verify = (payload: string, signature: string) => stripe.webhooks.constructEvent(payload, signature, SIGNING);
-    return { d: { verify, record }, record };
+    const retrieveSubscription = vi.fn(async (id: string) => ({ id, status: current, customer: CUSTOMER }) as unknown as Stripe.Subscription);
+    return { d: { verify, record, retrieveSubscription }, record, retrieveSubscription };
   }
 
   function signed(payload: string, secret = SIGNING) { // check-secrets: allow
@@ -122,7 +143,7 @@ describe("POST /api/stripe/webhook (FR-47)", () => {
     ["customer.subscription.updated", "past_due"],
     ["customer.subscription.deleted", "canceled"],
   ])("records %s with the subscription status", async (type, status) => {
-    const { d, record } = deps();
+    const { d, record } = deps(status);
     const res = await handleWebhook(signed(event(type, status)), d);
 
     expect(res.status).toBe(200);
@@ -132,6 +153,29 @@ describe("POST /api/stripe/webhook (FR-47)", () => {
       status,
       eventCreated: new Date(1_760_000_000 * 1000),
     });
+  });
+
+  it("records the status of the retrieved subscription when an older event is delivered last", async () => {
+    const { d, record, retrieveSubscription } = deps("canceled");
+    const res = await handleWebhook(signed(event("customer.subscription.created", "active")), d);
+
+    expect(res.status).toBe(200);
+    expect(retrieveSubscription).toHaveBeenCalledWith("sub_synthetic");
+    expect(record).toHaveBeenCalledWith({
+      customerId: CUSTOMER,
+      subscriptionId: "sub_synthetic",
+      status: "canceled",
+      eventCreated: new Date(1_760_000_000 * 1000),
+    });
+  });
+
+  it("answers 500 when the subscription cannot be retrieved, so Stripe retries", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { d, record, retrieveSubscription } = deps();
+    retrieveSubscription.mockRejectedValue(new Error("stripe down"));
+    const res = await handleWebhook(signed(event("customer.subscription.updated")), d);
+    expect(res.status).toBe(500);
+    expect(record).not.toHaveBeenCalled();
   });
 
   it("rejects a bad signature with 400 and records nothing", async () => {

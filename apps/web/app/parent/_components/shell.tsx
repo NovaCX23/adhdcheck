@@ -4,13 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/client";
+import { createLazyClient } from "@/lib/supabase/client";
 import { S } from "../strings";
 
 // Parent pages run in the browser with the parent's own Supabase client (RLS returns only their rows).
 // No session: back to /login.
 export function useParent(): { client: SupabaseClient; ready: boolean } {
-  const client = useMemo(() => createClient(), []);
+  const client = useMemo(() => createLazyClient(), []);
   const router = useRouter();
   const [ready, setReady] = useState(false);
   useEffect(() => {

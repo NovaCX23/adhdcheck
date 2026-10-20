@@ -17,6 +17,7 @@ export async function POST(request: Request) {
   }
   return handleWebhook(request, {
     verify: (payload, signature) => stripe.webhooks.constructEvent(payload, signature, signingValue),
+    retrieveSubscription: (id) => stripe.subscriptions.retrieve(id),
     record: (update) => recordSubscription(admin, update),
   });
 }

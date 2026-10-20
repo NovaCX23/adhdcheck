@@ -50,11 +50,19 @@ describe("POST /api/waitlist", () => {
     expect(saved.size).toBe(1);
   });
 
-  it("defaults any other language to ro", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
+  it("rejects a language other than ro or en with 400 (was: defaulted to ro)", async () => {
     const { store, saved } = memoryStore();
-    await post({ email: EMAIL, lang: "xx" }, { store });
-    expect(saved.get(EMAIL)).toBe("ro");
+    const res = await post({ email: EMAIL, lang: "xx" }, { store });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false });
+    expect(saved.size).toBe(0);
+  });
+
+  it("rejects an unknown field with 400", async () => {
+    const { store, saved } = memoryStore();
+    const res = await post({ email: EMAIL, lang: "en", extra: 1 }, { store });
+    expect(res.status).toBe(400);
+    expect(saved.size).toBe(0);
   });
 
   it("never logs the email address", async () => {
@@ -108,7 +116,7 @@ describe("POST /api/waitlist", () => {
         throw new Error(`insert failed for ${EMAIL}`);
       },
     };
-    const res = await post({ email: EMAIL }, { store: failing });
+    const res = await post({ email: EMAIL, lang: "ro" }, { store: failing });
 
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ ok: false });

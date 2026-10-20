@@ -8,5 +8,5 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Skip static files, and /api/sessions, which the child's device calls without a parent session.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/sessions|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/sessions|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mp3)$).*)"],
 };
