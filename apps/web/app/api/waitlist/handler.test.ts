@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { EmailSender } from "../../../lib/email/sender";
 import type { RateLimiter } from "../../../lib/rate-limit";
+import { waitlistEmail } from "../../../lib/email/messages";
 import { handleWaitlistPost, type WaitlistStore } from "./handler";
 
 const EMAIL = "parent.synthetic@example.test";
@@ -15,19 +17,53 @@ function memoryStore() {
 }
 
 const allowAll: RateLimiter = { take: async () => true };
+const quietEmail = (): EmailSender & { send: ReturnType<typeof vi.fn> } => ({ send: vi.fn().mockResolvedValue("sent") });
 
-function post(body: unknown, { store = memoryStore().store, rateLimiter = allowAll, contentType = "application/json" } = {}) {
+function post(
+  body: unknown,
+  { store = memoryStore().store, rateLimiter = allowAll, contentType = "application/json", email = quietEmail() as EmailSender } = {},
+) {
   return handleWaitlistPost(
     new Request("http://localhost/api/waitlist", {
       method: "POST",
       headers: { "content-type": contentType },
       body: typeof body === "string" ? body : JSON.stringify(body),
     }),
-    { store, rateLimiter },
+    { store, rateLimiter, email },
   );
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("POST /api/waitlist confirmation email (FR-50)", () => {
+  it("sends a confirmation in the page language, once per address (idempotency key without the address)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const email = quietEmail();
+    await post({ email: "Parent.Synthetic@Example.TEST", lang: "ro" }, { email });
+
+    expect(email.send).toHaveBeenCalledTimes(1);
+    const sent = email.send.mock.calls[0][0];
+    expect(sent.to).toBe(EMAIL);
+    expect(sent.message.subject).toBe(waitlistEmail("ro").subject);
+    expect(sent.idempotencyKey).toMatch(/^waitlist\/[0-9a-f]{64}$/);
+    expect(sent.idempotencyKey).not.toContain("synthetic");
+  });
+
+  it("still answers ok when the email cannot be sent", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const email = { send: vi.fn().mockResolvedValue("failed") };
+    const res = await post({ email: EMAIL, lang: "en" }, { email });
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("sends nothing when the address could not be stored", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const email = quietEmail();
+    const failing: WaitlistStore = { add: async () => Promise.reject(new Error("down")) };
+    await post({ email: EMAIL, lang: "en" }, { store: failing, email });
+    expect(email.send).not.toHaveBeenCalled();
+  });
+});
 
 describe("POST /api/waitlist", () => {
   it("stores the address (lower case) with its language and answers ok", async () => {

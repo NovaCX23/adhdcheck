@@ -1,4 +1,5 @@
 // Early-access sign-ups from the landing page. Logic and tests live in handler.ts.
+import { createResendSender } from "@/lib/email/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseRateLimiter, SESSIONS_RATE_LIMIT } from "@/lib/rate-limit";
 import { handleWaitlistPost } from "./handler";
@@ -21,5 +22,6 @@ export async function POST(request: Request) {
     },
     // Same placeholder limit as session posts (TODO in docs/02 NFR-13).
     rateLimiter: createSupabaseRateLimiter(admin, SESSIONS_RATE_LIMIT),
+    email: createResendSender(),
   });
 }

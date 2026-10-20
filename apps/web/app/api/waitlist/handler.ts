@@ -1,10 +1,14 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
+import { waitlistEmail } from "../../../lib/email/messages";
+import type { EmailSender } from "../../../lib/email/sender";
 import { clientKey, type RateLimiter } from "../../../lib/rate-limit";
 
 // POST /api/waitlist: early-access sign-ups from the landing page (FR-42). Stores the address (lower case)
 // and the page language; an address already listed gets the same answer and is stored once.
 // The address is never logged (only language and time). Rate limited per client like /api/sessions.
-// TODO: confirmation email via Resend (research/03-tech-stack.md, section 7).
+// FR-50: a confirmation email in the page language. Its idempotency key is a hash of the address, so the
+// form cannot be used to send one address more than one confirmation a day. It never changes the answer.
 
 export interface WaitlistStore {
   add(email: string, lang: "ro" | "en"): Promise<void>;
@@ -14,7 +18,7 @@ const Body = z.strictObject({ email: z.email().max(254), lang: z.enum(["ro", "en
 
 export async function handleWaitlistPost(
   request: Request,
-  deps: { store: WaitlistStore; rateLimiter: RateLimiter },
+  deps: { store: WaitlistStore; rateLimiter: RateLimiter; email: EmailSender },
 ): Promise<Response> {
   const type = request.headers.get("content-type") ?? "";
   if (!type.toLowerCase().startsWith("application/json")) return Response.json({ ok: false }, { status: 415 });
@@ -39,12 +43,19 @@ export async function handleWaitlistPost(
   if (!parsed.success) return Response.json({ ok: false }, { status: 400 });
   const { email, lang: language } = parsed.data;
 
+  const address = email.toLowerCase();
   try {
-    await deps.store.add(email.toLowerCase(), language);
+    await deps.store.add(address, language);
   } catch {
     console.error("[waitlist] failed", { error: "storage_unavailable" });
     return Response.json({ ok: false }, { status: 503 });
   }
+
+  await deps.email.send({
+    to: address,
+    message: waitlistEmail(language),
+    idempotencyKey: `waitlist/${createHash("sha256").update(address).digest("hex")}`,
+  });
 
   console.log("[waitlist] signup received", { lang: language, at: new Date().toISOString() });
   return Response.json({ ok: true });
