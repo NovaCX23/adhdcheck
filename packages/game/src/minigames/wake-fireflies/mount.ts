@@ -122,6 +122,8 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
     return [s[0] * w, s[1] * h] as const;
   };
   const moon = () => [w * 0.86, h * 0.1] as const;
+  // The Start button drawn in draw(): the centre and the radius. Only a tap on it leaves an instruction.
+  const playGeom = () => [w / 2, h * 0.42, Math.max(44, Math.min(w, h) * 0.09)] as const;
 
   function startStage(next: Stage, now: number) {
     stage = next;
@@ -181,13 +183,13 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
     if (!isPrimaryPointer(e)) return; // a second finger is not a response
     const t = e.timeStamp;
     chime.unlock();
-    if (stage === "intro") {
-      startStage("practice-intro", lastNow || performance.now());
-      return;
-    }
-    if (stage === "practice-intro" || stage === "between") {
+    if (stage === "intro" || stage === "practice-intro" || stage === "between") {
+      // Only a tap on the Start button leaves an instruction (a tap elsewhere, or the second tap of a double tap, does nothing).
+      const rect = canvas.getBoundingClientRect();
+      const [bx, by, br] = playGeom();
+      if (Math.hypot(e.clientX - rect.left - bx, e.clientY - rect.top - by) > br) return;
       if (t < stageSince) return; // a tap stamped before the instruction appeared does not skip it
-      startStage(stage === "between" ? "real" : "practice", lastNow || performance.now());
+      startStage(stage === "intro" ? "practice-intro" : stage === "between" ? "real" : "practice", lastNow || performance.now());
       return;
     }
     if ((stage !== "practice" && stage !== "real") || trial.kind !== "lit" || trial.onset === null) return;
@@ -283,7 +285,7 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
               ? STRINGS.practiceIntro
               : null;
     if (text) drawBubble(ctx!, text, lx + 52 * lumaS, ly - 70 * lumaS, Math.min(w - lx - 70 * lumaS, 420), lumaS);
-    if (stage === "intro" || stage === "practice-intro" || stage === "between") drawPlay(ctx!, w / 2, h * 0.42, Math.max(44, Math.min(w, h) * 0.09), now, reduceMotion);
+    if (stage === "intro" || stage === "practice-intro" || stage === "between") drawPlay(ctx!, ...playGeom(), now, reduceMotion);
   }
 
   const loop = (now: number) => {

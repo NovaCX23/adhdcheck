@@ -245,10 +245,13 @@ export const browserDom: ChainDom = {
   },
   card(el, n, total) {
     const text = transitionText("en", n, total); // TODO (Person 4): language choice when the play page is translated
+    // The card is a plain box; only the announcement (glow, title, hint) is a live region. The button sits outside it.
     const box = document.createElement("div");
-    box.setAttribute("role", "status");
-    box.setAttribute("aria-live", "polite");
     box.style.cssText = `position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:24px;text-align:center;background:${NIGHT};color:#fffdf7;font-family:inherit`;
+    const status = document.createElement("div");
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    status.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:28px";
     const glow = document.createElement("div");
     glow.setAttribute("aria-hidden", "true");
     glow.style.cssText =
@@ -265,7 +268,8 @@ export const browserDom: ChainDom = {
     // At least 44 by 44 CSS px (adhdcheck-dev, section 4); a large target for a small hand. Focus ring kept.
     button.style.cssText =
       "min-width:200px;min-height:64px;padding:12px 40px;border:0;border-radius:9999px;background:#fff1b8;color:#1f1b3a;font:inherit;font-size:clamp(22px,4vw,32px);font-weight:700;cursor:pointer;touch-action:manipulation";
-    box.append(glow, title, hint, button);
+    status.append(glow, title, hint);
+    box.append(status, button);
     el.appendChild(box);
     let settle: () => void = () => {};
     const tapped = new Promise<void>((resolve) => (settle = resolve));

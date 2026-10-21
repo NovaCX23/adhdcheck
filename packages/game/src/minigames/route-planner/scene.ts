@@ -399,8 +399,16 @@ export function createRoutePlannerScene(parent: HTMLElement, opts: SceneOptions)
     if (!isPrimaryPointer(e)) return; // a second finger is not a response
     audio.unlock(); // inside the gesture: required by iOS Safari
     tones.unlock();
+    if (runner.waitsForReady()) {
+      // Only the Start button leaves an instruction: a tap elsewhere, or the second tap of a double tap, does nothing.
+      if (ui.playHit(e.clientX, e.clientY) && runner.ready(e.timeStamp) === "ready") {
+        ui.play(false);
+        audio.play("start", 0.6);
+      }
+      return;
+    }
     const kind = runner.pointerDown(e.timeStamp, cellUnder(e.clientX, e.clientY));
-    if (kind === "start" || kind === "ready") {
+    if (kind === "start") {
       ui.play(false);
       audio.play("start", 0.6);
     }

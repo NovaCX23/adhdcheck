@@ -17,6 +17,7 @@ export function sessionResult(band: ScoreResult["band"], overrides: Partial<Scor
     score: {
       ...(validScoreResult as ScoreResult),
       band,
+      scoring_method: "rules_v1",
       indicators: { ...validScoreResult.indicators, omission_rate: 0.06, commission_rate: 0.22, off_target_tap_rate: 0.12, rt_cv: 0.27 },
       // Placeholder reason lines are stored in the database but never copied into the report.
       reasons: ["TODO (Person 4): reason line for high_rt_variability"],

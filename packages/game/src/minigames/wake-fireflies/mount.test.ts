@@ -10,11 +10,14 @@ function fakeEnvironment() {
   const frames: Array<(t: number) => void> = [];
   const noop = () => undefined;
   const gradient = { addColorStop: noop };
+  const texts: string[] = [];
   const ctx = new Proxy(
     {},
     {
       get: (_t, key) =>
-        key === "createRadialGradient" || key === "createLinearGradient"
+        key === "fillText"
+          ? (t: string) => texts.push(t)
+          : key === "createRadialGradient" || key === "createLinearGradient"
           ? () => gradient
           : key === "measureText"
             ? () => ({ width: 10 })
@@ -45,8 +48,11 @@ function fakeEnvironment() {
   const parent = { appendChild: noop } as unknown as HTMLElement;
   return {
     parent,
-    tap: (timeStamp: number) =>
-      listeners.get("pointerdown")?.({ timeStamp, isPrimary: true, pointerType: "touch", button: 0, clientX: 1, clientY: 1 }),
+    // Every line of text drawn so far, joined: what the child could read.
+    shown: () => texts.join(" "),
+    // Default: on the Start button (centre x 400, y 252 of the 800 x 600 canvas, radius 54); (1, 1) is far from it.
+    tap: (timeStamp: number, clientX = 400, clientY = 252) =>
+      listeners.get("pointerdown")?.({ timeStamp, isPrimary: true, pointerType: "touch", button: 0, clientX, clientY }),
     // Runs queued animation frames up to the given time, 16 ms apart.
     runFrames(from: number, to: number) {
       for (let t = from; t <= to; t += 16) {
@@ -86,6 +92,18 @@ describe("mountWakeFireflies instructions wait for a tap", () => {
     env.runFrames(48, 600_000);
     vi.advanceTimersByTime(60_000);
     expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("I3: a tap away from the Start button does not leave an instruction, a tap on it does", async () => {
+    const env = fakeEnvironment();
+    await mountWakeFireflies(env.parent, { seed: 7, trials: 1, onComplete: vi.fn() });
+    env.runFrames(0, 32);
+    env.tap(40, 1, 1); // away from the button
+    env.runFrames(48, 2000);
+    expect(env.shown()).not.toContain("When a firefly glows"); // still the first instruction
+    env.tap(2010); // on the button
+    env.runFrames(2016, 3000);
+    expect(env.shown()).toContain("When a firefly glows");
   });
 
   it("finishes once when the child taps through the instructions", async () => {

@@ -500,7 +500,8 @@ describe("browserDom.card waits for the child's tap", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   function fakeDoc() {
-    const made: Array<{ tag: string; textContent: string; style: { cssText: string }; listeners: Record<string, Array<() => void>>; removed: boolean }> = [];
+    type Node = { tag: string; textContent: string; style: { cssText: string }; listeners: Record<string, Array<() => void>>; removed: boolean; attrs: Record<string, string>; kids: Node[] };
+    const made: Node[] = [];
     vi.stubGlobal("document", {
       createElement: (tag: string) => {
         const node = {
@@ -509,8 +510,14 @@ describe("browserDom.card waits for the child's tap", () => {
           style: { cssText: "" },
           listeners: {} as Record<string, Array<() => void>>,
           removed: false,
-          setAttribute() {},
-          append() {},
+          attrs: {} as Record<string, string>,
+          kids: [] as Node[],
+          setAttribute(k: string, v: string) {
+            node.attrs[k] = v;
+          },
+          append(...k: Node[]) {
+            node.kids.push(...k);
+          },
           addEventListener(type: string, fn: () => void) {
             (node.listeners[type] ??= []).push(fn);
           },
@@ -541,6 +548,17 @@ describe("browserDom.card waits for the child's tap", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(settled).toBe(true);
     vi.useRealTimers();
+  });
+
+  it("the Start button is outside the live region (role=status), so a screen reader does not re-announce it", () => {
+    const made = fakeDoc();
+    browserDom.card({ appendChild() {} } as unknown as HTMLElement, 1, 5);
+    const button = made.find((n) => n.tag === "button")!;
+    const status = made.find((n) => n.attrs.role === "status")!;
+    const contains = (n: typeof status, target: typeof status): boolean => n === target || n.kids.some((k) => contains(k, target));
+    expect(status).toBeDefined();
+    expect(contains(status, button)).toBe(false);
+    expect(status.kids.some((k) => k.textContent === "Game 1 of 5")).toBe(true); // the announcement stays in the live region
   });
 
   it("removing the card settles it too, so a destroyed chain does not hang", async () => {

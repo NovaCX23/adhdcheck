@@ -1,3 +1,4 @@
+import { insideRect } from "../../pointer";
 // DOM layer over the 3D canvas: speech bubble, start button, practice hand. Pointer events pass through
 // (pointer-events: none); the game container itself takes every pointerdown.
 const CSS = `
@@ -42,6 +43,8 @@ export interface Ui {
   /** Place the bubble above a screen point (CSS pixels). */
   place: (x: number, y: number) => void;
   play: (on: boolean) => void;
+  /** True when the point (client pixels) is on the visible Start button: only a tap there leaves an instruction. */
+  playHit: (clientX: number, clientY: number) => boolean;
   hand: (on: boolean) => void;
   destroy: () => void;
 }
@@ -95,6 +98,9 @@ export function buildUi(parent: HTMLElement): Ui {
     },
     play(on) {
       play.classList.toggle("off", !on);
+    },
+    playHit(x, y) {
+      return !play.classList.contains("off") && insideRect(x, y, play.getBoundingClientRect());
     },
     hand(on) {
       hand.classList.toggle("on", on);

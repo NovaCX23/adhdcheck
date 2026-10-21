@@ -6,8 +6,11 @@ import { PRACTICE_PUZZLE, PUZZLES, judgeTap, optimalMoves, same, summarise } fro
 import type { Cell, Puzzle, PuzzleRecord, RoutePlannerResult, RouteTap } from "./types";
 
 // TODO: design choices, no sourced values (research/04 section 5 gives 4 puzzles, about 2 minutes).
-// The practice instruction waits for a tap on "ready", with no timer (Hatem, 2026-10-21: the children need time to
-// read). The calm line between boards is feedback, not an instruction, and keeps its timer.
+// The practice instruction waits for a tap on the Start button, with no timer (Hatem, 2026-10-21: the children need
+// time to read), then keeps the intro delay it had before, so a second tap of a double tap never lands on a board.
+// The calm line between boards is feedback, not an instruction, and keeps its timer.
+// TODO: design choice, no sourced value.
+export const PRACTICE_INTRO_MS = 2000;
 export const BETWEEN_MS = 1600;
 /** A puzzle ends unsolved after this long without a tap, so a child who stops is not stuck. */
 export const IDLE_TIMEOUT_MS = 30_000;
@@ -40,6 +43,7 @@ export class RoutePlannerRunner {
   private readonly records: PuzzleRecord[] = [];
   private startRequested = false;
   private readyRequested = false;
+  private readyAtMs = 0;
   private t0 = 0;
   private stateSince = 0;
   private next = -1; // -1 = practice board, then 0..3
@@ -72,7 +76,7 @@ export class RoutePlannerRunner {
       return;
     }
     if (this.state === "practice-intro") {
-      if (this.readyRequested) this.show(ts);
+      if (this.readyRequested && ts - this.readyAtMs >= PRACTICE_INTRO_MS) this.show(ts);
       return;
     }
     if (this.state === "between" && ts - this.stateSince >= BETWEEN_MS) {
@@ -137,6 +141,19 @@ export class RoutePlannerRunner {
     });
   }
 
+  /** True while the practice instruction waits for the child's tap on the Start button. */
+  waitsForReady(): boolean {
+    return this.state === "practice-intro";
+  }
+
+  /** The child tapped the Start button. A tap stamped before the instruction appeared is ignored. */
+  ready(tMs: number): "ready" | "ignored" {
+    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince) return "ignored";
+    this.readyRequested = true;
+    this.readyAtMs = tMs;
+    return "ready";
+  }
+
   /** tMs: pointerdown event.timeStamp. cell: the board cell under the finger, null outside the board. */
   pointerDown(tMs: number, cell: Cell | null): "start" | "ready" | "move" | "blocked" | "off" | "ignored" {
     if (this.state === "intro") {
@@ -145,12 +162,7 @@ export class RoutePlannerRunner {
       this.t0 = tMs;
       return "start";
     }
-    if (this.state === "practice-intro") {
-      // A tap stamped before the instruction appeared does not skip it.
-      if (this.readyRequested || tMs < this.stateSince) return "ignored";
-      this.readyRequested = true;
-      return "ready";
-    }
+    if (this.state === "practice-intro") return "ignored"; // only the Start button leaves it: the scene calls ready()
     const b = this.board;
     if (this.state !== "puzzle" || !b || this.pendingBoard || this.finishedAt !== null) return "ignored";
     if (tMs < this.onsetMs) return "ignored"; // stamped before the frame that drew the board: not a response to it

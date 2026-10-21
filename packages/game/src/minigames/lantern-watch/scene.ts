@@ -355,13 +355,21 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
   const onDown = (e: PointerEvent) => {
     if (!isPrimaryPointer(e)) return; // a second finger is not a response
     audio.unlock(); // inside the gesture: required by iOS Safari
+    if (runner.waitsForReady()) {
+      // Only the Start button leaves an instruction: a tap elsewhere, or the second tap of a double tap, does nothing.
+      if (ui.playHit(e.clientX, e.clientY) && runner.ready(e.timeStamp) === "ready") {
+        ui.play(false);
+        audio.play("start", 0.6);
+      }
+      return;
+    }
     const r = ui.root.getBoundingClientRect();
     const state = runner.state;
     if (pointerKind === null && (state === "calib" || state === "trials")) {
       pointerKind = normalizePointerType(e.pointerType, window.matchMedia?.("(pointer: coarse)").matches ? "touch" : "mouse");
     }
     const kind = forwardPointerDown(e, r, runner, hitLantern);
-    if (kind === "start" || kind === "ready" || kind === "continue") {
+    if (kind === "start" || kind === "continue") {
       ui.play(false);
       audio.play("start", 0.6);
     }

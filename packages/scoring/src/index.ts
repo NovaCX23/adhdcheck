@@ -12,8 +12,12 @@ import thresholdsJson from "../thresholds.v0.json";
 // "third" is the FR-21 wording).
 //
 // Open definitions (nothing in docs/ or research/ states them):
-//  - off_target_tap_rate has no denominator in the documents. Here: off-target taps / (off-target taps + Lantern
-//    trials with a response), the share of all taps that missed. Bounded 0 to 1 as the contract requires.
+//  - off_target_tap_rate counts inter-stimulus-interval taps only (research/03 section 4: "off-target taps during
+//    inter-stimulus interval (activity proxy)"). Its denominator has no source. TODO (Hatem decides): here
+//    isi off-target taps / (isi off-target taps + Lantern trials with a response). The value is computed and stored but
+//    NOT shown on the result card or the PDF until the denominator is decided.
+//  - An indicator whose denominator is empty is null (no go trial, no hit, fewer than two hits for SD and CV, fewer
+//    than three go trials for the vigilance change). A band is never given on a null indicator.
 //  - vigilance_change is one number in contract v1. Here: omission rate of the last third of go trials minus the
 //    omission rate of the first third (research/04 7.2, "proposal vigilance.omission_change", the scoring
 //    owner decides). Thirds are floor(go trials / 3) trials each, in presentation order (field i).
@@ -36,14 +40,16 @@ export const THRESHOLDS: Thresholds = thresholdsJson;
 type Trial = SessionMetrics["trials"][number];
 type Indicators = ScoreResult["indicators"];
 
-const mean = (a: number[]) => (a.length === 0 ? 0 : a.reduce((s, x) => s + x, 0) / a.length);
-// Sample standard deviation (n - 1), as research/04 7.2. Fewer than two values: 0.
+// An empty denominator gives null ("no data"), never a real-looking 0.
+const mean = (a: number[]) => (a.length === 0 ? null : a.reduce((s, x) => s + x, 0) / a.length);
+// Sample standard deviation (n - 1), as research/04 7.2. Fewer than two values: null.
 const sd = (a: number[]) => {
-  if (a.length < 2) return 0;
   const m = mean(a);
+  if (m === null || a.length < 2) return null;
   return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1));
 };
-const ratio = (num: number, den: number) => (den === 0 ? 0 : num / den);
+const ratio = (num: number, den: number) => (den === 0 ? null : num / den);
+const diff = (a: number | null, b: number | null) => (a === null || b === null ? null : a - b);
 const count = (a: Trial[], outcome: Trial["outcome"]) => a.filter((t) => t.outcome === outcome).length;
 
 export function computeIndicators(session: SessionMetrics): { indicators: Indicators; nTrials: number; nHits: number; nAnticipations: number } {
@@ -55,19 +61,21 @@ export function computeIndicators(session: SessionMetrics): { indicators: Indica
   const third = Math.floor(go.length / 3);
   const early = go.slice(0, third);
   const late = go.slice(go.length - third);
-  const vigilance = third === 0 ? 0 : ratio(count(late, "omission"), late.length) - ratio(count(early, "omission"), early.length);
+  const vigilance = third === 0 ? null : diff(ratio(count(late, "omission"), late.length), ratio(count(early, "omission"), early.length));
 
-  const offTarget = session.off_target_taps.length;
+  // research/03 section 4: off-target taps are those during the inter-stimulus interval ("activity proxy").
+  const offTarget = session.off_target_taps.filter((t) => t.during === "isi").length;
   const responded = lantern.filter((t) => t.responded).length;
 
   const rtMean = mean(rts);
+  const rtSd = sd(rts);
   return {
     indicators: {
       omission_rate: ratio(count(go, "omission"), go.length),
       commission_rate: ratio(count(nogo, "commission"), nogo.length),
       rt_mean_ms: rtMean,
-      rt_sd_ms: sd(rts),
-      rt_cv: ratio(sd(rts), rtMean),
+      rt_sd_ms: rtSd,
+      rt_cv: rtSd === null || rtMean === null ? null : ratio(rtSd, rtMean),
       vigilance_change: vigilance,
       off_target_tap_rate: ratio(offTarget, offTarget + responded),
     },
@@ -86,7 +94,7 @@ const REASON: Record<string, string> = {
 
 export function scoreSession(session: SessionMetrics, thresholds: Thresholds = THRESHOLDS): ScoreResult {
   const { indicators, nTrials, nHits, nAnticipations } = computeIndicators(session);
-  const share = ratio(nAnticipations, nTrials);
+  const share = ratio(nAnticipations, nTrials) ?? 0; // no trial at all: nothing to share, and n_trials 0 already says so
   const notes: string[] = [];
   const flags: string[] = [];
   const reasons: string[] = [];
@@ -101,10 +109,13 @@ export function scoreSession(session: SessionMetrics, thresholds: Thresholds = T
   ] as const;
   const unset = gates.filter(([, v]) => v === null).map(([k]) => k);
 
+  const rated = (["rt_cv", "commission_rate", "omission_rate"] as const).filter((k) => indicators[k] === null);
   let band: ScoreResult["band"] = "insufficient_data";
   if (unset.length > 0) {
     // "dev:" notes are not shown to parents (ResultCard isParentNote).
     notes.push(`dev: thresholds.v0.json has no value for ${unset.join(", ")}, so no band is assigned (insufficient_data).`);
+  } else if (rated.length > 0) {
+    notes.push(`dev: no data for ${rated.join(", ")} in this session, so no band is assigned (insufficient_data).`);
   } else if (
     nTrials < (thresholds.min_trials as number) ||
     nHits < (thresholds.min_hits as number) ||
@@ -113,7 +124,7 @@ export function scoreSession(session: SessionMetrics, thresholds: Thresholds = T
     band = "insufficient_data";
   } else {
     for (const key of ["rt_cv", "commission_rate", "omission_rate"] as const) {
-      if (indicators[key] > (thresholds.max[key] as number)) {
+      if ((indicators[key] as number) > (thresholds.max[key] as number)) {
         flags.push(key);
         reasons.push(REASON[key] as string);
       }

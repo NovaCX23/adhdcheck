@@ -3,7 +3,7 @@ import { SCORE_DISCLAIMER } from "@adhdcheck/contracts";
 import { BAND_TEXT, S } from "../app/parent/strings";
 import type { SessionResult } from "./data/parent";
 import { formatDate } from "./format";
-import { showsIndicators } from "./indicators";
+import { shownIndicators } from "./indicators";
 
 // Parent report (D-05 and D-05b, DECIDED, Hatem, 2026-10-20; FR-48). The only paid feature: 9.99 EUR,
 // one-off per report, downloadable by the parent who paid, who is emailed a link to it (R3-D1). It holds only
@@ -18,7 +18,6 @@ import { showsIndicators } from "./indicators";
 export type ReportLine = { kind: "title" | "heading" | "text" | "small"; text: string };
 export type ReportModel = { fileName: string; lines: ReportLine[] };
 
-const RATE_KEYS = ["omission_rate", "commission_rate", "off_target_tap_rate"] as const;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 export function buildReport(result: SessionResult, nickname: string): ReportModel | null {
@@ -32,10 +31,12 @@ export function buildReport(result: SessionResult, nickname: string): ReportMode
     { kind: "text", text: SCORE_DISCLAIMER },
   ];
   if (band.support) lines.push({ kind: "text", text: band.support });
-  if (showsIndicators(score)) {
+  const shown = shownIndicators(score);
+  if (shown.length > 0) {
     lines.push({ kind: "heading", text: S.result.indicators });
-    for (const k of RATE_KEYS) lines.push({ kind: "text", text: `${S.indicator[k]}: ${pct(score.indicators[k])}` });
-    lines.push({ kind: "text", text: `${S.indicator.rt_cv}: ${score.indicators.rt_cv.toFixed(2)}` });
+    for (const { key, value } of shown) {
+      lines.push({ kind: "text", text: `${S.indicator[key]}: ${key === "rt_cv" ? value.toFixed(2) : pct(value)}` });
+    }
     if (!score.validated) lines.push({ kind: "small", text: S.result.notValidated });
   }
   lines.push({ kind: "heading", text: S.result.nextStep }, { kind: "text", text: S.result.nextStepText });

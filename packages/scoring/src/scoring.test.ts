@@ -87,8 +87,8 @@ describe("indicators (FR-21), hand computed", () => {
   it("RT CV: 90.5232 / 422.2222 = 0.21439", () => expect(ind.rt_cv).toBeCloseTo(0.21439, 4));
   it("vigilance change: omission rate last third 2/4 minus first third 1/4 = 0.25", () =>
     expect(ind.vigilance_change).toBeCloseTo(0.25, 10));
-  it("off-target tap rate: 3 / (3 + 11 responded trials) = 0.2142857", () =>
-    expect(ind.off_target_tap_rate).toBeCloseTo(3 / 14, 10));
+  it("off-target tap rate counts inter-stimulus-interval taps only (research/03 section 4): 2 of the 3 taps, 2 / (2 + 11) = 0.153846", () =>
+    expect(ind.off_target_tap_rate).toBeCloseTo(2 / 13, 10));
 
   it("ignores calibration trials and the order of the array (sorted by i)", () => {
     const shuffled = [...MIXED].reverse();
@@ -111,12 +111,39 @@ describe("indicators (FR-21), hand computed", () => {
     expect(r.data_quality.pct_anticipations).toBe(0);
   });
 
-  it("returns zeros, never NaN, when there is nothing to divide", () => {
+  it("I1: an indicator with an empty denominator is null, never a real-looking 0", () => {
     const none = scoreSession(session([hit(0, 400)], 0), FIXTURE).indicators;
-    for (const v of Object.values(none)) expect(Number.isFinite(v)).toBe(true);
-    expect(none.commission_rate).toBe(0);
-    expect(none.rt_sd_ms).toBe(0);
-    expect(none.vigilance_change).toBe(0);
+    expect(none.commission_rate).toBeNull(); // no no-go trial
+    expect(none.vigilance_change).toBeNull(); // fewer than 3 go trials: no third
+    expect(none.rt_sd_ms).toBeNull(); // one hit: no spread
+    expect(none.rt_cv).toBeNull();
+    expect(none.rt_mean_ms).toBe(400);
+    expect(none.omission_rate).toBe(0); // 0 omissions of 1 go trial: a real 0
+    for (const v of Object.values(none)) expect(Number.isNaN(v)).toBe(false);
+  });
+
+  it("I1: no hit at all gives null RT mean, SD and CV; no go trial gives a null omission rate", () => {
+    const noHit = scoreSession(session([omission(0), omission(1), omission(2)], 0), FIXTURE).indicators;
+    expect(noHit.rt_mean_ms).toBeNull();
+    expect(noHit.rt_sd_ms).toBeNull();
+    expect(noHit.rt_cv).toBeNull();
+    expect(noHit.omission_rate).toBe(1);
+    const noGo = scoreSession(session([reject(0), commission(1, 300)], 0), FIXTURE).indicators;
+    expect(noGo.omission_rate).toBeNull();
+    expect(noGo.commission_rate).toBeCloseTo(0.5, 10);
+    expect(scoreSession(session([], 0), FIXTURE).indicators.off_target_tap_rate).toBeNull();
+  });
+
+  it("I1: a band is never given on an indicator that is null", () => {
+    const r = scoreSession(session([hit(0, 400), hit(1, 410)], 0), { ...FIXTURE, min_trials: 1, min_hits: 1 });
+    expect(r.band).toBe("insufficient_data"); // commission rate is null here
+    expect(r.flags).toEqual([]);
+    expect(r.data_quality.notes.join(" ")).toMatch(/^dev: /);
+  });
+
+  it("I2: a stimulus-time tap is not an off-target tap", () => {
+    const s = SessionMetricsSchema.parse({ ...session(MIXED), off_target_taps: [{ t_ms: 5, during: "stimulus" }, { t_ms: 6, during: "stimulus" }] });
+    expect(scoreSession(s, FIXTURE).indicators.off_target_tap_rate).toBe(0);
   });
 });
 
@@ -198,6 +225,23 @@ describe("shipped thresholds.v0.json (no value is sourced yet)", () => {
       const literals = (code.match(/(?<![\w.])\d+(\.\d+)?(?!\w)/g) ?? []).filter((n) => !["0", "1", "2", "3"].includes(n));
       expect(literals, f).toEqual([]);
     }
+  });
+});
+
+// FR-25: changing a threshold requires a new scoring_method. The values are pinned per method: edit thresholds.v0.json
+// without bumping scoring_method (and adding the new method here) and this test fails.
+const PINNED: Record<string, string> = {
+  rules_v1: '{"validated":false,"min_trials":null,"min_hits":null,"max_anticipation_share":null,"max":{"rt_cv":null,"commission_rate":null,"omission_rate":null}}',
+};
+describe("FR-25: thresholds are tied to scoring_method", () => {
+  it("the shipped values are the ones pinned for the method the scorer reports", () => {
+    const { validated, min_trials, min_hits, max_anticipation_share, max } = shipped;
+    const method = scoreSession(session(MIXED)).scoring_method;
+    expect(JSON.stringify({ validated, min_trials, min_hits, max_anticipation_share, max })).toBe(PINNED[method]);
+  });
+  it("the check can fail: a changed value no longer matches the pin", () => {
+    const changed = JSON.stringify({ validated: false, min_trials: 1, min_hits: null, max_anticipation_share: null, max: { rt_cv: null, commission_rate: null, omission_rate: null } });
+    expect(changed).not.toBe(PINNED.rules_v1);
   });
 });
 

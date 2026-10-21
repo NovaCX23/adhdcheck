@@ -25,8 +25,11 @@ export const RECALL_GAP_MS = 300;
 /** A sequence ends as "timeout" after this long without a tap during recall. */
 export const RECALL_TIMEOUT_MS = 12_000;
 export const FEEDBACK_MS = 1200;
-// The practice instruction and "Now let's light up the sky together." wait for a tap on "ready", with no timer
-// (Hatem, 2026-10-21: the children need time to read).
+// The practice instruction and "Now let's light up the sky together." wait for a tap on the Start button, with no
+// timer (Hatem, 2026-10-21: the children need time to read). After that tap each keeps the intro delay it had before.
+// TODO: design choices, no sourced value.
+export const PRACTICE_INTRO_MS = 2000;
+export const BETWEEN_MS = 1800;
 export const RESULT_VERSION = "0.1.0";
 
 export type RunState = "intro" | "practice-intro" | "present" | "recall" | "feedback" | "between" | "done";
@@ -64,6 +67,7 @@ export class StarPathRunner {
   private readonly records: SequenceRecord[] = [];
   private startRequested = false;
   private readyRequested = false;
+  private readyAtMs = 0;
   private t0 = 0;
   private stateSince = 0;
   private cur: Current | undefined;
@@ -97,18 +101,21 @@ export class StarPathRunner {
     return this.stateSince;
   }
 
-  /** True while the state shows an instruction that waits for the child's tap. */
+  /** The child tapped the Start button of an instruction. A tap stamped before the instruction appeared is ignored. */
+  ready(tMs: number): TapKind {
+    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince) return "ignored";
+    this.readyRequested = true;
+    this.readyAtMs = tMs;
+    return "ready";
+  }
+
+  /** True while the state shows an instruction that waits for the child's tap on the Start button. */
   waitsForReady(): boolean {
     return this.state === "practice-intro" || this.state === "between";
   }
 
   pointerDown(tMs: number, star: number | null): TapKind {
-    if (this.waitsForReady()) {
-      // A tap stamped before the instruction appeared does not skip it.
-      if (this.readyRequested || tMs < this.stateSince) return "ignored";
-      this.readyRequested = true;
-      return "ready";
-    }
+    if (this.waitsForReady()) return "ignored"; // only the Start button leaves an instruction: the scene calls ready() for it
     if (this.state === "intro") {
       if (this.startRequested) return "ignored";
       this.startRequested = true;
@@ -145,7 +152,7 @@ export class StarPathRunner {
         }
         return;
       case "practice-intro":
-        if (this.readyRequested) this.startSequence(ts);
+        if (this.readyRequested && ts - this.readyAtMs >= PRACTICE_INTRO_MS) this.startSequence(ts);
         return;
       case "present":
         this.present(ts);
@@ -158,7 +165,7 @@ export class StarPathRunner {
         if (ts - this.stateSince >= FEEDBACK_MS) this.afterFeedback(ts);
         return;
       case "between":
-        if (this.readyRequested) this.startSequence(ts);
+        if (this.readyRequested && ts - this.readyAtMs >= BETWEEN_MS) this.startSequence(ts);
         return;
       default:
         return;

@@ -10,8 +10,11 @@ import { GEMS_LATER, GEMS_NOW, LATER_DELAY_MS, NOW_DELAY_MS, N_CHOICES, PRACTICE
 import type { Choice, ChoiceRecord, ChoiceTap, ScheduledChoice, TreasureChoiceResult } from "./types";
 
 // TODO: design choices, no sourced values (NOTES.md).
-// The practice instruction and "Now you choose, every time." wait for a tap on "ready", with no timer (Hatem,
-// 2026-10-21: the children need time to read).
+// The practice instruction and "Now you choose, every time." wait for a tap on the Start button, with no timer
+// (Hatem, 2026-10-21: the children need time to read). After that tap each keeps the intro delay it had before.
+// TODO: design choices, no sourced value.
+export const PRACTICE_INTRO_MS = 2500;
+export const BETWEEN_MS = 2200;
 export const CHEST_MS = 1500;
 export const RESULT_VERSION = "0.1.0";
 
@@ -49,6 +52,7 @@ export class TreasureChoiceRunner {
   private readonly records: ChoiceRecord[] = [];
   private startRequested = false;
   private readyRequested = false;
+  private readyAtMs = 0;
   private idx = -1;
   private t0 = 0;
   private stateSince = 0;
@@ -86,18 +90,21 @@ export class TreasureChoiceRunner {
   }
 
   /** side: the option under the pointer, or null for a tap on neither. tMs: pointerdown event.timeStamp. */
-  /** True while the state shows an instruction that waits for the child's tap. */
+  /** The child tapped the Start button of an instruction. A tap stamped before the instruction appeared is ignored. */
+  ready(tMs: number): TapKind {
+    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince) return "ignored";
+    this.readyRequested = true;
+    this.readyAtMs = tMs;
+    return "ready";
+  }
+
+  /** True while the state shows an instruction that waits for the child's tap on the Start button. */
   waitsForReady(): boolean {
     return this.state === "practice-intro" || this.state === "between";
   }
 
   pointerDown(tMs: number, side: Choice | null): TapKind {
-    if (this.waitsForReady()) {
-      // A tap stamped before the instruction appeared does not skip it.
-      if (this.readyRequested || tMs < this.stateSince) return "ignored";
-      this.readyRequested = true;
-      return "ready";
-    }
+    if (this.waitsForReady()) return "ignored"; // only the Start button leaves an instruction: the scene calls ready() for it
     if (this.state === "intro") {
       if (this.startRequested) return "ignored";
       this.startRequested = true;
@@ -132,7 +139,7 @@ export class TreasureChoiceRunner {
         }
         return;
       case "practice-intro":
-        if (this.readyRequested) this.next(ts);
+        if (this.readyRequested && ts - this.readyAtMs >= PRACTICE_INTRO_MS) this.next(ts);
         return;
       case "chest":
         if (item && ts - this.stateSince >= CHEST_MS) {
@@ -155,7 +162,7 @@ export class TreasureChoiceRunner {
         if (item && ts - this.choiceMs >= item.sched.slotMs) this.finish(ts);
         return;
       case "between":
-        if (this.readyRequested) this.next(ts);
+        if (this.readyRequested && ts - this.readyAtMs >= BETWEEN_MS) this.next(ts);
         return;
       default:
         return;

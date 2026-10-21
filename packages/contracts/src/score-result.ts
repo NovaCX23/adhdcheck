@@ -8,14 +8,16 @@ import { z } from "zod";
 
 const rate = z.number().min(0).max(1);
 
+// An indicator whose denominator is empty (no go trial, no hit, fewer than two hits for a spread) is null: "no data"
+// is never written as a real-looking 0. rules_v0 rows (the placeholder scorer) hold zeros and are not shown.
 export const IndicatorsSchema = z.strictObject({
-  omission_rate: rate,
-  commission_rate: rate,
-  rt_mean_ms: z.number().nonnegative(),
-  rt_sd_ms: z.number().nonnegative(),
-  rt_cv: z.number().nonnegative(),
-  vigilance_change: z.number(),
-  off_target_tap_rate: rate,
+  omission_rate: rate.nullable(),
+  commission_rate: rate.nullable(),
+  rt_mean_ms: z.number().nonnegative().nullable(),
+  rt_sd_ms: z.number().nonnegative().nullable(),
+  rt_cv: z.number().nonnegative().nullable(),
+  vigilance_change: z.number().nullable(),
+  off_target_tap_rate: rate.nullable(),
 });
 
 export const DataQualitySchema = z.strictObject({

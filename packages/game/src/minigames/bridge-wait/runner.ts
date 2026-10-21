@@ -9,8 +9,12 @@ import type { BridgeWaitResult, ScheduledTrial, TrialRecord, TrialTiming } from 
 export const NARRATION_MS = 2500;
 export const GO_WINDOW_MS = 2000;
 export const ITI_MS = 1000;
-// The practice instruction and "Now we cross for real." wait for a tap on "ready", with no timer (Hatem, 2026-10-21:
-// the children need time to read). The per-trial narration is part of the measured task and keeps its timing.
+// The practice instruction and "Now we cross for real." wait for a tap on the Start button, with no timer (Hatem,
+// 2026-10-21: the children need time to read). After that tap each keeps the intro delay it had before, so a second
+// tap of a double tap never lands in a measured trial. The per-trial narration is part of the measured task.
+// TODO: design choices, no sourced value.
+export const PRACTICE_INTRO_MS = 2000;
+export const BETWEEN_MS = 1500;
 /** Stop-signal crow delay after the chime. TODO: parameters, design choice (research/04). Flag is OFF by default. */
 export const CROW_DELAY_MS = 250;
 export const RESULT_VERSION = "0.2.0";
@@ -50,6 +54,7 @@ export class BridgeWaitRunner {
   private readonly records: TrialRecord[] = [];
   private startRequested = false;
   private readyRequested = false;
+  private readyAtMs = 0;
   private idx = -1;
   private t0 = 0;
   private stateSince = 0;
@@ -83,18 +88,21 @@ export class BridgeWaitRunner {
     return this.stateSince;
   }
 
-  /** True while the state shows an instruction that waits for the child's tap. */
+  /** The child tapped the Start button of an instruction. A tap stamped before the instruction appeared is ignored. */
+  ready(tMs: number): TapKind {
+    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince) return "ignored";
+    this.readyRequested = true;
+    this.readyAtMs = tMs;
+    return "ready";
+  }
+
+  /** True while the state shows an instruction that waits for the child's tap on the Start button. */
   waitsForReady(): boolean {
     return this.state === "practice-intro" || this.state === "between";
   }
 
   pointerDown(tMs: number): TapKind {
-    if (this.waitsForReady()) {
-      // A tap stamped before the instruction appeared does not skip it.
-      if (this.readyRequested || tMs < this.stateSince) return "ignored";
-      this.readyRequested = true;
-      return "ready";
-    }
+    if (this.waitsForReady()) return "ignored"; // only the Start button leaves an instruction: the scene calls ready() for it
     if (this.state === "intro") {
       if (this.startRequested) return "ignored";
       this.startRequested = true;
@@ -130,7 +138,7 @@ export class BridgeWaitRunner {
         }
         return;
       case "practice-intro":
-        if (this.readyRequested) this.next(ts);
+        if (this.readyRequested && ts - this.readyAtMs >= PRACTICE_INTRO_MS) this.next(ts);
         return;
       case "narration":
         if (ts - this.stateSince >= NARRATION_MS) {
@@ -165,7 +173,7 @@ export class BridgeWaitRunner {
         if (ts - this.stateSince >= ITI_MS) this.finishTrial(ts);
         return;
       case "between":
-        if (this.readyRequested) this.next(ts);
+        if (this.readyRequested && ts - this.readyAtMs >= BETWEEN_MS) this.next(ts);
         return;
       default:
         return;

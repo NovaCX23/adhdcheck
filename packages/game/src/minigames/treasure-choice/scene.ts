@@ -341,8 +341,16 @@ export function createTreasureChoiceScene(parent: HTMLElement, opts: SceneOption
   const onDown = (e: PointerEvent) => {
     if (!isPrimaryPointer(e)) return; // a second finger is not a response
     audio.unlock(); // inside the gesture: required by iOS Safari
+    if (runner.waitsForReady()) {
+      // Only the Start button leaves an instruction: a tap elsewhere, or the second tap of a double tap, does nothing.
+      if (ui.playHit(e.clientX, e.clientY) && runner.ready(e.timeStamp) === "ready") {
+        ui.play(false);
+        audio.play("start", 0.6);
+      }
+      return;
+    }
     const kind = runner.pointerDown(e.timeStamp, sideAt(e.clientX));
-    if (kind === "start" || kind === "ready") {
+    if (kind === "start") {
       ui.play(false);
       audio.play("start", 0.6);
     }

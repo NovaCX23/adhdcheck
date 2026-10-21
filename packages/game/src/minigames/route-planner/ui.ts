@@ -1,3 +1,4 @@
+import { insideRect } from "../../pointer";
 // DOM layer over the 3D canvas: speech bubble, start button, practice hand. Same look as Bridge Wait and Treasure
 // Choice. Pointer events pass through (pointer-events: none); the game container itself takes every pointerdown.
 // Nothing here ever shows a number, a move count or a timer.
@@ -48,6 +49,8 @@ export interface Ui {
    */
   place: (x: number, y: number, ceiling?: number) => void;
   play: (on: boolean) => void;
+  /** True when the point (client pixels) is on the visible Start button: only a tap there leaves an instruction. */
+  playHit: (clientX: number, clientY: number) => boolean;
   /** Show the practice hand with its fingertip at a screen point, or hide it (null). */
   handAt: (p: { x: number; y: number } | null) => void;
   destroy: () => void;
@@ -111,6 +114,9 @@ export function buildUi(parent: HTMLElement): Ui {
     },
     play(on) {
       play.classList.toggle("off", !on);
+    },
+    playHit(x, y) {
+      return !play.classList.contains("off") && insideRect(x, y, play.getBoundingClientRect());
     },
     handAt(p) {
       if (!p) {
