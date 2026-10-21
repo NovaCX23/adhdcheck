@@ -2,7 +2,7 @@
 // at module load: pages that import @adhdcheck/game for other games do not pull three.
 import type { TreasureChoiceResult } from "./types";
 
-export { BETWEEN_MS, CHEST_MS, PRACTICE_INTRO_MS, RESULT_VERSION } from "./runner";
+export { CHEST_MS, RESULT_VERSION } from "./runner";
 
 export interface TreasureChoiceOptions {
   seed?: number;

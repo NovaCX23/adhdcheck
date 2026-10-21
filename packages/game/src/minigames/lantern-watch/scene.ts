@@ -236,19 +236,20 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
         parent.dataset.phase = s;
         switch (s) {
           case "calib-intro":
-            ui.play(false);
+            ui.play(true); // the instruction stays until the child taps (no timer)
             ui.say(STRINGS.calibIntro);
             decorTarget = 0;
             setMode("talk", ts);
             audio.babble(1800);
             break;
           case "practice-intro":
+            ui.play(true);
             ui.say(STRINGS.practiceIntro);
             setMode("talk", ts);
             audio.babble(1800);
             break;
           case "block-intro":
-            ui.play(false);
+            ui.play(runner.waitsForReady()); // block 1 waits for a tap; "Here we go again!" does not
             ui.say(runner.blockIndex === 0 ? STRINGS.realIntro : STRINGS.again);
             decorTarget = 0;
             setMode("hop", ts);
@@ -360,7 +361,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
       pointerKind = normalizePointerType(e.pointerType, window.matchMedia?.("(pointer: coarse)").matches ? "touch" : "mouse");
     }
     const kind = forwardPointerDown(e, r, runner, hitLantern);
-    if (kind === "start" || kind === "continue") {
+    if (kind === "start" || kind === "ready" || kind === "continue") {
       ui.play(false);
       audio.play("start", 0.6);
     }

@@ -25,8 +25,8 @@ export const RECALL_GAP_MS = 300;
 /** A sequence ends as "timeout" after this long without a tap during recall. */
 export const RECALL_TIMEOUT_MS = 12_000;
 export const FEEDBACK_MS = 1200;
-export const PRACTICE_INTRO_MS = 2000;
-export const BETWEEN_MS = 1800;
+// The practice instruction and "Now let's light up the sky together." wait for a tap on "ready", with no timer
+// (Hatem, 2026-10-21: the children need time to read).
 export const RESULT_VERSION = "0.1.0";
 
 export type RunState = "intro" | "practice-intro" | "present" | "recall" | "feedback" | "between" | "done";
@@ -53,7 +53,7 @@ export interface RunnerHooks {
   onComplete?: (result: StarPathResult) => void;
 }
 
-export type TapKind = "start" | "next" | "complete" | "wrong" | "off" | "early" | "ignored";
+export type TapKind = "start" | "ready" | "next" | "complete" | "wrong" | "off" | "early" | "ignored";
 
 export class StarPathRunner {
   state: RunState = "intro";
@@ -63,6 +63,7 @@ export class StarPathRunner {
   private readonly rnd: () => number;
   private readonly records: SequenceRecord[] = [];
   private startRequested = false;
+  private readyRequested = false;
   private t0 = 0;
   private stateSince = 0;
   private cur: Current | undefined;
@@ -96,7 +97,18 @@ export class StarPathRunner {
     return this.stateSince;
   }
 
+  /** True while the state shows an instruction that waits for the child's tap. */
+  waitsForReady(): boolean {
+    return this.state === "practice-intro" || this.state === "between";
+  }
+
   pointerDown(tMs: number, star: number | null): TapKind {
+    if (this.waitsForReady()) {
+      // A tap stamped before the instruction appeared does not skip it.
+      if (this.readyRequested || tMs < this.stateSince) return "ignored";
+      this.readyRequested = true;
+      return "ready";
+    }
     if (this.state === "intro") {
       if (this.startRequested) return "ignored";
       this.startRequested = true;
@@ -133,7 +145,7 @@ export class StarPathRunner {
         }
         return;
       case "practice-intro":
-        if (ts - this.stateSince >= PRACTICE_INTRO_MS) this.startSequence(ts);
+        if (this.readyRequested) this.startSequence(ts);
         return;
       case "present":
         this.present(ts);
@@ -146,7 +158,7 @@ export class StarPathRunner {
         if (ts - this.stateSince >= FEEDBACK_MS) this.afterFeedback(ts);
         return;
       case "between":
-        if (ts - this.stateSince >= BETWEEN_MS) this.startSequence(ts);
+        if (this.readyRequested) this.startSequence(ts);
         return;
       default:
         return;
@@ -177,6 +189,7 @@ export class StarPathRunner {
   }
 
   private setState(s: RunState, ts: number) {
+    this.readyRequested = false;
     this.state = s;
     this.stateSince = ts;
     this.hooks.onState?.(s, ts, this.cur);

@@ -30,7 +30,11 @@ function setup(choices = 10, frame = 16, seed = 11) {
     return ts;
   };
   const until = (pred: () => boolean, max = 100_000) => {
-    for (let k = 0; k < max && !pred(); k++) step();
+    // The instructions wait for a tap (Hatem, 2026-10-21): this child taps "ready" one frame after each appears.
+    for (let k = 0; k < max && !pred(); k++) {
+      if (r.waitsForReady()) r.pointerDown(ts + 1, null);
+      step();
+    }
     if (!pred()) throw new Error(`state never reached, now ${r.state}`);
   };
   return {
@@ -72,6 +76,47 @@ function play(
   }
   return s;
 }
+
+describe("TreasureChoiceRunner instructions wait for a tap (no timer)", () => {
+  it("stays on the practice instruction for 60 s, then leaves on one ready tap", () => {
+    const s = setup(1);
+    s.r.pointerDown(1001, null);
+    s.step();
+    expect(s.r.state).toBe("practice-intro");
+    for (let k = 0; k < 3750; k++) s.step();
+    expect(s.r.state).toBe("practice-intro");
+    expect(s.r.pointerDown(s.now() + 1, null)).toBe("ready");
+    expect(s.r.pointerDown(s.now() + 2, null)).toBe("ignored");
+    s.step();
+    expect(s.r.state).toBe("chest");
+  });
+
+  it("a tap stamped before the instruction appeared does not skip it", () => {
+    const s = setup(1);
+    s.r.pointerDown(1001, null);
+    s.step();
+    expect(s.r.pointerDown(s.r.stateStartMs - 1, null)).toBe("ignored");
+    expect(s.r.state).toBe("practice-intro");
+  });
+
+  it("stays on 'Now you choose, every time.' until a tap", () => {
+    const s = setup(1);
+    s.r.pointerDown(1001, null);
+    s.step();
+    for (let k = 0; k < PRACTICE_CHOICES; k++) {
+      s.until(() => s.r.state === "offer");
+      s.r.pointerDown(s.now() + 6, s.r.current()!.sched.only!);
+      s.step();
+      s.until(() => s.r.state !== "wait" && s.r.state !== "rest");
+    }
+    expect(s.r.state).toBe("between");
+    for (let k = 0; k < 3750; k++) s.step();
+    expect(s.r.state).toBe("between");
+    expect(s.r.pointerDown(s.now() + 1, null)).toBe("ready");
+    s.step();
+    expect(s.r.current()?.practice).toBe(false);
+  });
+});
 
 describe("TreasureChoiceRunner (render loop wiring around logic.ts)", () => {
   it("starts on the first tap and opens the practice round in the next frame", () => {

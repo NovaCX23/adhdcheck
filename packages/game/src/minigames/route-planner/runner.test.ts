@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hintStep, neighbours, same } from "./logic";
-import { BETWEEN_MS, IDLE_TIMEOUT_MS, PRACTICE_INTRO_MS, RoutePlannerRunner } from "./runner";
+import { BETWEEN_MS, IDLE_TIMEOUT_MS, RoutePlannerRunner } from "./runner";
 import type { Cell, RoutePlannerResult } from "./types";
 
 const FRAME = 16;
@@ -31,15 +31,45 @@ function setup() {
     }
     for (let step = hintStep(b.puzzle, b.at, b.taken); step; step = hintStep(b.puzzle, b.at, b.taken)) tap(step);
   };
+  // The practice instruction waits for a tap (Hatem, 2026-10-21): this child taps "ready" a frame after it appears.
+  const ready = () => {
+    tick(FRAME);
+    const kind = r.pointerDown(ts + 1, null);
+    tick(2 * FRAME);
+    return kind;
+  };
   const toNextBoard = () => tick(BETWEEN_MS + 2 * FRAME);
-  return { r, tick, tap, solve, toNextBoard, onsets, now: () => ts, result: () => result };
+  return { r, tick, tap, ready, solve, toNextBoard, onsets, now: () => ts, result: () => result };
 }
+
+describe("RoutePlannerRunner instructions wait for a tap (no timer)", () => {
+  it("stays on the practice instruction for 60 s, then leaves on one ready tap", () => {
+    const s = setup();
+    s.tap(null); // start
+    s.tick(60_000);
+    expect(s.r.state).toBe("practice-intro");
+    expect(s.r.board).toBeUndefined();
+    expect(s.r.pointerDown(s.now() + 1, null)).toBe("ready");
+    expect(s.r.pointerDown(s.now() + 2, null)).toBe("ignored");
+    s.tick(2 * FRAME);
+    expect(s.r.state).toBe("puzzle");
+    expect(s.r.board?.practice).toBe(true);
+  });
+
+  it("a tap stamped before the instruction appeared does not skip it", () => {
+    const s = setup();
+    s.tap(null);
+    s.tick(2 * FRAME);
+    expect(s.r.pointerDown(0, null)).toBe("ignored");
+    expect(s.r.state).toBe("practice-intro");
+  });
+});
 
 describe("RoutePlannerRunner", () => {
   it("runs start, practice (not recorded), then the 4 measured puzzles, and reports extra moves", () => {
     const s = setup();
     expect(s.tap(null)).toBe("start");
-    s.tick(PRACTICE_INTRO_MS + 2 * FRAME);
+    s.ready();
     expect(s.r.board?.practice).toBe(true);
     s.solve();
     for (let k = 0; k < 4; k++) {
@@ -59,7 +89,7 @@ describe("RoutePlannerRunner", () => {
   it("takes the onset from the frame that first draws the board and the planning time from the first move", () => {
     const s = setup();
     s.tap(null);
-    s.tick(PRACTICE_INTRO_MS + 2 * FRAME);
+    s.ready();
     s.solve();
     s.toNextBoard();
     const onset = s.onsets.at(-1)!;
@@ -82,7 +112,7 @@ describe("RoutePlannerRunner", () => {
   it("records taps on rocks and outside the board without moving Luma", () => {
     const s = setup();
     s.tap(null);
-    s.tick(PRACTICE_INTRO_MS + 2 * FRAME);
+    s.ready();
     s.solve();
     s.toNextBoard();
     const b = s.r.board!;
@@ -113,7 +143,7 @@ describe("RoutePlannerRunner", () => {
   it("ends a puzzle unsolved after a long pause, so the game always finishes", () => {
     const s = setup();
     s.tap(null);
-    s.tick(PRACTICE_INTRO_MS + 2 * FRAME);
+    s.ready();
     s.solve();
     s.toNextBoard();
     s.tick(IDLE_TIMEOUT_MS + 2 * FRAME);
@@ -135,7 +165,7 @@ describe("RoutePlannerRunner", () => {
     const s = setup();
     s.tap(null);
     expect(s.r.pointerDown(s.now(), { c: 2, r: 3 })).toBe("ignored"); // practice intro still showing
-    s.tick(PRACTICE_INTRO_MS + 2 * FRAME);
+    s.ready();
     s.solve();
     expect(s.r.pointerDown(s.now(), { c: 2, r: 3 })).toBe("ignored"); // solved, ends on the next frame
     s.tick(FRAME);
@@ -146,7 +176,7 @@ describe("RoutePlannerRunner", () => {
   it("does not let an unsolved board lower the total extra moves", () => {
     const s = setup();
     s.tap(null);
-    s.tick(PRACTICE_INTRO_MS + 2 * FRAME);
+    s.ready();
     s.solve();
     s.toNextBoard();
     s.solve(true); // puzzle 0: a detour of 2 extra moves
@@ -166,7 +196,7 @@ describe("RoutePlannerRunner", () => {
   it("ignores a tap stamped before the onset frame, so planningMs is never negative", () => {
     const s = setup();
     s.tap(null);
-    s.tick(PRACTICE_INTRO_MS + 2 * FRAME);
+    s.ready();
     s.solve();
     s.toNextBoard();
     const b = s.r.board!;

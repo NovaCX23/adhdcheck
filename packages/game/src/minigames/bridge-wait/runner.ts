@@ -9,8 +9,8 @@ import type { BridgeWaitResult, ScheduledTrial, TrialRecord, TrialTiming } from 
 export const NARRATION_MS = 2500;
 export const GO_WINDOW_MS = 2000;
 export const ITI_MS = 1000;
-export const PRACTICE_INTRO_MS = 2000;
-export const BETWEEN_MS = 1500;
+// The practice instruction and "Now we cross for real." wait for a tap on "ready", with no timer (Hatem, 2026-10-21:
+// the children need time to read). The per-trial narration is part of the measured task and keeps its timing.
 /** Stop-signal crow delay after the chime. TODO: parameters, design choice (research/04). Flag is OFF by default. */
 export const CROW_DELAY_MS = 250;
 export const RESULT_VERSION = "0.2.0";
@@ -38,7 +38,7 @@ export interface RunnerHooks {
   onComplete?: (result: BridgeWaitResult) => void;
 }
 
-export type TapKind = "start" | "recorded" | "cross" | "ignored";
+export type TapKind = "start" | "ready" | "recorded" | "cross" | "ignored";
 
 export class BridgeWaitRunner {
   state: RunState = "intro";
@@ -49,6 +49,7 @@ export class BridgeWaitRunner {
   private readonly hooks: RunnerHooks;
   private readonly records: TrialRecord[] = [];
   private startRequested = false;
+  private readyRequested = false;
   private idx = -1;
   private t0 = 0;
   private stateSince = 0;
@@ -82,7 +83,18 @@ export class BridgeWaitRunner {
     return this.stateSince;
   }
 
+  /** True while the state shows an instruction that waits for the child's tap. */
+  waitsForReady(): boolean {
+    return this.state === "practice-intro" || this.state === "between";
+  }
+
   pointerDown(tMs: number): TapKind {
+    if (this.waitsForReady()) {
+      // A tap stamped before the instruction appeared does not skip it.
+      if (this.readyRequested || tMs < this.stateSince) return "ignored";
+      this.readyRequested = true;
+      return "ready";
+    }
     if (this.state === "intro") {
       if (this.startRequested) return "ignored";
       this.startRequested = true;
@@ -118,7 +130,7 @@ export class BridgeWaitRunner {
         }
         return;
       case "practice-intro":
-        if (ts - this.stateSince >= PRACTICE_INTRO_MS) this.next(ts);
+        if (this.readyRequested) this.next(ts);
         return;
       case "narration":
         if (ts - this.stateSince >= NARRATION_MS) {
@@ -153,7 +165,7 @@ export class BridgeWaitRunner {
         if (ts - this.stateSince >= ITI_MS) this.finishTrial(ts);
         return;
       case "between":
-        if (ts - this.stateSince >= BETWEEN_MS) this.next(ts);
+        if (this.readyRequested) this.next(ts);
         return;
       default:
         return;
@@ -161,6 +173,7 @@ export class BridgeWaitRunner {
   }
 
   private setState(s: RunState, ts: number) {
+    this.readyRequested = false;
     this.state = s;
     this.stateSince = ts;
     this.hooks.onState?.(s, ts, this.current());

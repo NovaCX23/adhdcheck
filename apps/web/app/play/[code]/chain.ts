@@ -25,8 +25,8 @@ import { transitionText } from "./strings";
 // There is no time limit per game. Lantern Watch cannot be skipped: the upload cannot be built without it. If Lantern Watch itself cannot start,
 // nothing can be scored: its calm fallback sentence stays on screen and nothing is uploaded, as before.
 
-// TODO (design choice, no source): how long the "Game n of 5" card stays before the next game starts.
-export const DEFAULT_TRANSITION_MS = 3000;
+// The "Game n of 5" card stays on screen until the child taps its button (Hatem, 2026-10-21: the children need time to
+// read). There is no timer, so no reading time is invented.
 
 // TODO (design choice, no source): how long an adult holds the hidden corner control to skip the running game.
 export const DEFAULT_SKIP_HOLD_MS = 3000;
@@ -45,16 +45,14 @@ export type ChainDom = {
   slot(el: HTMLElement): { el: HTMLElement; remove(): void };
   /** A hidden control in a corner of `el`: holding it for holdMs calls onSkip. For the adult, never the child. */
   skip(el: HTMLElement, onSkip: () => void, holdMs: number): { remove(): void };
-  /** The transition card "Game n of total". */
-  card(el: HTMLElement, n: number, total: number): { remove(): void };
+  /** The transition card "Game n of total" with a button: `tapped` settles when the child taps it, or when the card is removed. */
+  card(el: HTMLElement, n: number, total: number): { remove(): void; tapped: Promise<void> };
 };
 
 export type ChainDeps = {
   lantern: SessionGame;
   steps: readonly ChainStep[];
-  transitionMs: number;
   skipHoldMs: number;
-  wait(ms: number): Promise<void>;
   dom: ChainDom;
 };
 
@@ -99,8 +97,9 @@ function skippedEntry(id: MiniGameId, reason: SkipReason): MiniGameEntry {
 }
 
 // The card and the skip control are decoration and an adult's escape hatch: a DOM problem in them must never stop a game.
-const NOTHING = { remove() {} };
-function safely<T extends { remove(): void }>(make: () => T): T | typeof NOTHING {
+// A card that cannot be drawn must not stop the chain either: it counts as already tapped.
+const NOTHING = { remove() {}, tapped: Promise.resolve() };
+function safely<T extends { remove(): void; tapped?: Promise<void> }>(make: () => T): T | typeof NOTHING {
   try {
     return make();
   } catch {
@@ -115,7 +114,7 @@ export function createSessionChain(deps: ChainDeps): SessionGame {
     let lantern: SessionGameRun | undefined;
     let current: Handle | undefined;
     let slot: { remove(): void } | undefined;
-    let card: { remove(): void } | undefined;
+    let card: { remove(): void; tapped: Promise<void> } | undefined;
     let skipControl: { remove(): void } | undefined;
 
     const closeGame = () => {
@@ -166,8 +165,8 @@ export function createSessionChain(deps: ChainDeps): SessionGame {
       });
 
     const run = async (): Promise<SessionMetrics | null> => {
-      card = safely(() => deps.dom.card(el, 1, total));
-      await deps.wait(deps.transitionMs);
+      card = safely(() => deps.dom.card(el, 1, total)) as { remove(): void; tapped: Promise<void> };
+      await card.tapped;
       card?.remove();
       card = undefined;
       if (destroyed) return null;
@@ -176,8 +175,8 @@ export function createSessionChain(deps: ChainDeps): SessionGame {
       if (destroyed) return null;
       const entries: MiniGameEntry[] = [];
       for (const [k, step] of deps.steps.entries()) {
-        card = safely(() => deps.dom.card(el, k + 2, total));
-        await deps.wait(deps.transitionMs);
+        card = safely(() => deps.dom.card(el, k + 2, total)) as { remove(): void; tapped: Promise<void> };
+        await card.tapped;
         card?.remove();
         card = undefined;
         if (destroyed) return null;
@@ -260,9 +259,25 @@ export const browserDom: ChainDom = {
     const hint = document.createElement("p");
     hint.textContent = text.hint;
     hint.style.cssText = "margin:0;font-size:clamp(18px,3vw,26px);line-height:1.3";
-    box.append(glow, title, hint);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = text.button;
+    // At least 44 by 44 CSS px (adhdcheck-dev, section 4); a large target for a small hand. Focus ring kept.
+    button.style.cssText =
+      "min-width:200px;min-height:64px;padding:12px 40px;border:0;border-radius:9999px;background:#fff1b8;color:#1f1b3a;font:inherit;font-size:clamp(22px,4vw,32px);font-weight:700;cursor:pointer;touch-action:manipulation";
+    box.append(glow, title, hint, button);
     el.appendChild(box);
-    return { remove: () => box.remove() };
+    let settle: () => void = () => {};
+    const tapped = new Promise<void>((resolve) => (settle = resolve));
+    button.addEventListener("click", () => settle());
+    // Removing the card (the page is left) also settles `tapped`, so the chain can notice it was destroyed and stop.
+    return {
+      tapped,
+      remove: () => {
+        box.remove();
+        settle();
+      },
+    };
   },
 };
 

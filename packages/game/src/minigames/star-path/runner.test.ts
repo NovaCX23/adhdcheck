@@ -7,6 +7,8 @@ import type { StarPathResult } from "./types";
 function run(r: StarPathRunner, from: number, until: (ts: number) => boolean, limitMs = 120_000): number {
   let ts = from;
   while (!until(ts) && ts < from + limitMs) {
+    // The instructions wait for a tap (Hatem, 2026-10-21): this child taps "ready" a frame after each appears.
+    if (r.waitsForReady()) r.pointerDown(ts + 1, null);
     ts += 16;
     r.frame(ts);
   }
@@ -52,6 +54,51 @@ function failTwice(r: StarPathRunner, ts: number): number {
   }
   return ts;
 }
+
+describe("StarPathRunner instructions wait for a tap (no timer)", () => {
+  it("stays on the practice instruction for 60 s, then leaves on one ready tap", () => {
+    const { r } = setup();
+    r.pointerDown(100, null);
+    r.frame(116);
+    expect(r.state).toBe("practice-intro");
+    for (let ts = 132; ts < 60_000; ts += 16) r.frame(ts);
+    expect(r.state).toBe("practice-intro");
+    expect(r.pointerDown(60_001, null)).toBe("ready");
+    expect(r.pointerDown(60_002, null)).toBe("ignored");
+    r.frame(60_016);
+    expect(r.state).toBe("present");
+  });
+
+  it("a tap stamped before the instruction appeared does not skip it", () => {
+    const { r } = setup();
+    r.pointerDown(100, null);
+    r.frame(116);
+    expect(r.pointerDown(r.stateStartMs - 1, null)).toBe("ignored");
+    expect(r.state).toBe("practice-intro");
+  });
+
+  it("stays on 'Now let's light up the sky together.' until a tap", () => {
+    const { r } = setup();
+    r.pointerDown(100, null);
+    let ts = run(r, 100, () => r.state === "recall");
+    for (const star of (r.current() as Current).sequence) {
+      ts += 300;
+      r.pointerDown(ts, star);
+    }
+    // frames without a ready tap from here: the practice sequence is answered, so the game reaches "between"
+    for (let k = 0; k < 2000 && r.state !== "between"; k++) {
+      ts += 16;
+      r.frame(ts);
+    }
+    expect(r.state).toBe("between");
+    for (const end = ts + 60_000; ts < end; ts += 16) r.frame(ts);
+    expect(r.state).toBe("between");
+    expect(r.pointerDown(ts + 1, null)).toBe("ready");
+    r.frame(ts + 16);
+    expect(r.state).toBe("present");
+    expect((r.current() as Current).practice).toBe(false);
+  });
+});
 
 describe("StarPathRunner", () => {
   it("lights one star per 1000 ms, each onset being the frame time that draws it", () => {

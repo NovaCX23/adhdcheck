@@ -22,8 +22,9 @@ import type { OffTargetTap } from "./session";
 import { PRACTICE_TRIALS as CALIB_PRACTICE_TRIALS, RESPONSE_WINDOW_MS, toContractTrial } from "../wake-fireflies/logic";
 
 // TODO: design choices, no sourced value (research/03 and 04 give none of these).
-export const CALIB_INTRO_MS = 2600;
-export const PRACTICE_INTRO_MS = 2600;
+// The three instructions (calibration, practice, first block) wait for a tap on "ready" with no timer (Hatem,
+// 2026-10-21: the children need time to read). Only the short "Here we go again!" before blocks 2 and 3 still
+// runs on a timer, because the child has just tapped to continue after the break.
 export const BLOCK_INTRO_MS = 2400;
 /** The break between blocks lasts at least this long; then a tap on the play button continues. */
 export const BREAK_MIN_MS = 4000;
@@ -84,10 +85,11 @@ export interface RunnerHooks {
   onComplete?: (data: RunData) => void;
 }
 
-export type TapKind = "start" | "response" | "off-target" | "continue" | "ignored";
+export type TapKind = "start" | "ready" | "response" | "off-target" | "continue" | "ignored";
 
 export class LanternWatchRunner {
   state: RunState = "intro";
+  private readyRequested = false;
   private readonly task: TaskConfig;
   private readonly anticipationMs: number | null;
   private readonly hooks: RunnerHooks;
@@ -170,6 +172,13 @@ export class LanternWatchRunner {
         if (this.startRequested) return "ignored";
         this.startRequested = true;
         return "start";
+      case "calib-intro":
+      case "practice-intro":
+      case "block-intro":
+        // A tap stamped before the instruction appeared (the tap that caused the change) does not skip it.
+        if (!this.waitsForReady() || this.readyRequested || tMs < this.since) return "ignored";
+        this.readyRequested = true;
+        return "ready";
       case "break":
         if (this.continueRequested || tMs - this.since < BREAK_MIN_MS) return "ignored";
         this.continueRequested = true;
@@ -214,7 +223,7 @@ export class LanternWatchRunner {
         }
         return;
       case "calib-intro":
-        if (ts - this.since >= CALIB_INTRO_MS) {
+        if (this.readyRequested) {
           this.idx = -1;
           this.setState("calib-practice", ts);
           this.nextCalibration(ts);
@@ -225,14 +234,14 @@ export class LanternWatchRunner {
         this.frameCalibration(ts);
         return;
       case "practice-intro":
-        if (ts - this.since >= PRACTICE_INTRO_MS) {
+        if (this.readyRequested) {
           this.idx = -1;
           this.setState("practice", ts);
           this.nextTimed(ts);
         }
         return;
       case "block-intro":
-        if (ts - this.since >= BLOCK_INTRO_MS) {
+        if (this.waitsForReady() ? this.readyRequested : ts - this.since >= BLOCK_INTRO_MS) {
           this.setState("trials", ts);
           this.nextTimed(ts);
         }
@@ -256,7 +265,13 @@ export class LanternWatchRunner {
     }
   }
 
+  /** True while the state shows an instruction that waits for the child's tap. */
+  waitsForReady(): boolean {
+    return this.state === "calib-intro" || this.state === "practice-intro" || (this.state === "block-intro" && this.block === 0);
+  }
+
   private setState(s: RunState, ts: number) {
+    this.readyRequested = false;
     this.state = s;
     this.since = ts;
     this.hooks.onState?.(s, ts);

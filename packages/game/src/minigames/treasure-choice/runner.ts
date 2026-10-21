@@ -10,9 +10,9 @@ import { GEMS_LATER, GEMS_NOW, LATER_DELAY_MS, NOW_DELAY_MS, N_CHOICES, PRACTICE
 import type { Choice, ChoiceRecord, ChoiceTap, ScheduledChoice, TreasureChoiceResult } from "./types";
 
 // TODO: design choices, no sourced values (NOTES.md).
-export const PRACTICE_INTRO_MS = 2500;
+// The practice instruction and "Now you choose, every time." wait for a tap on "ready", with no timer (Hatem,
+// 2026-10-21: the children need time to read).
 export const CHEST_MS = 1500;
-export const BETWEEN_MS = 2200;
 export const RESULT_VERSION = "0.1.0";
 
 export type RunState = "intro" | "practice-intro" | "chest" | "offer" | "wait" | "rest" | "between" | "done";
@@ -38,7 +38,7 @@ export interface RunnerHooks {
   onComplete?: (result: TreasureChoiceResult) => void;
 }
 
-export type TapKind = "start" | "choice" | "recorded" | "ignored";
+export type TapKind = "start" | "ready" | "choice" | "recorded" | "ignored";
 
 export class TreasureChoiceRunner {
   state: RunState = "intro";
@@ -48,6 +48,7 @@ export class TreasureChoiceRunner {
   private readonly hooks: RunnerHooks;
   private readonly records: ChoiceRecord[] = [];
   private startRequested = false;
+  private readyRequested = false;
   private idx = -1;
   private t0 = 0;
   private stateSince = 0;
@@ -85,7 +86,18 @@ export class TreasureChoiceRunner {
   }
 
   /** side: the option under the pointer, or null for a tap on neither. tMs: pointerdown event.timeStamp. */
+  /** True while the state shows an instruction that waits for the child's tap. */
+  waitsForReady(): boolean {
+    return this.state === "practice-intro" || this.state === "between";
+  }
+
   pointerDown(tMs: number, side: Choice | null): TapKind {
+    if (this.waitsForReady()) {
+      // A tap stamped before the instruction appeared does not skip it.
+      if (this.readyRequested || tMs < this.stateSince) return "ignored";
+      this.readyRequested = true;
+      return "ready";
+    }
     if (this.state === "intro") {
       if (this.startRequested) return "ignored";
       this.startRequested = true;
@@ -120,7 +132,7 @@ export class TreasureChoiceRunner {
         }
         return;
       case "practice-intro":
-        if (ts - this.stateSince >= PRACTICE_INTRO_MS) this.next(ts);
+        if (this.readyRequested) this.next(ts);
         return;
       case "chest":
         if (item && ts - this.stateSince >= CHEST_MS) {
@@ -143,7 +155,7 @@ export class TreasureChoiceRunner {
         if (item && ts - this.choiceMs >= item.sched.slotMs) this.finish(ts);
         return;
       case "between":
-        if (ts - this.stateSince >= BETWEEN_MS) this.next(ts);
+        if (this.readyRequested) this.next(ts);
         return;
       default:
         return;
@@ -151,6 +163,7 @@ export class TreasureChoiceRunner {
   }
 
   private setState(s: RunState, ts: number) {
+    this.readyRequested = false;
     this.state = s;
     this.stateSince = ts;
     this.hooks.onState?.(s, ts, this.current());

@@ -2,7 +2,7 @@
 // module load: pages that import @adhdcheck/game for other games do not pull three.
 import type { RoutePlannerResult } from "./types";
 
-export { BETWEEN_MS, IDLE_TIMEOUT_MS, PRACTICE_INTRO_MS, RESULT_VERSION } from "./runner";
+export { BETWEEN_MS, IDLE_TIMEOUT_MS, RESULT_VERSION } from "./runner";
 
 export interface RoutePlannerOptions {
   /** URL prefix of the self-hosted sound samples. Default "/games/bridge-wait" (shared with Bridge Wait). */

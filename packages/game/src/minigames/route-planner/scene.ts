@@ -331,7 +331,7 @@ export function createRoutePlannerScene(parent: HTMLElement, opts: SceneOptions)
       parent.dataset.boardIndex = String(b?.index ?? "");
       switch (s) {
         case "practice-intro":
-          ui.play(false);
+          ui.play(true); // the instruction stays until the child taps (no timer)
           ui.say(STRINGS.practiceIntro);
           fireflyTarget = 0;
           setMode("hover", ts);
@@ -400,7 +400,10 @@ export function createRoutePlannerScene(parent: HTMLElement, opts: SceneOptions)
     audio.unlock(); // inside the gesture: required by iOS Safari
     tones.unlock();
     const kind = runner.pointerDown(e.timeStamp, cellUnder(e.clientX, e.clientY));
-    if (kind === "start") audio.play("start", 0.6);
+    if (kind === "start" || kind === "ready") {
+      ui.play(false);
+      audio.play("start", 0.6);
+    }
   };
   const noMenu = (e: Event) => e.preventDefault();
   ui.root.addEventListener("pointerdown", onDown);

@@ -58,22 +58,53 @@ function fakeEnvironment() {
   };
 }
 
-describe("mountWakeFireflies lifecycle", () => {
+// The instructions stay on screen until the child taps (Hatem, 2026-10-21): the intro, the practice instruction and
+// the sentence between practice and the measured block each wait for a tap. A tap away from a firefly does nothing
+// during the trials, so a child who taps every 700 ms simulates "reads, then taps ready" without waking anything.
+function playThrough(env: ReturnType<typeof fakeEnvironment>, from: number, seconds: number) {
+  let t = from;
+  for (const end = from + seconds * 1000; t < end; t += 700) {
+    env.runFrames(t, t + 688);
+    env.tap(t + 696);
+  }
+  return t;
+}
+
+describe("mountWakeFireflies instructions wait for a tap", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
-  it("reports the result once when left to finish", async () => {
+  it("does not move on by itself: 10 minutes of frames after the first tap, no second tap, no result", async () => {
+    const env = fakeEnvironment();
+    const onComplete = vi.fn();
+    await mountWakeFireflies(env.parent, { seed: 7, trials: 1, onComplete });
+    env.runFrames(0, 32);
+    env.tap(40); // intro tap
+    env.runFrames(48, 600_000);
+    vi.advanceTimersByTime(60_000);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("finishes once when the child taps through the instructions", async () => {
     const env = fakeEnvironment();
     const onComplete = vi.fn();
     await mountWakeFireflies(env.parent, { seed: 7, trials: 1, onComplete });
     env.runFrames(0, 32);
     env.tap(40);
-    env.runFrames(48, 60_000);
+    playThrough(env, 48, 120);
     vi.advanceTimersByTime(10_000);
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("mountWakeFireflies lifecycle", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("never reports a result after it has been destroyed during the end hold", async () => {
@@ -82,7 +113,7 @@ describe("mountWakeFireflies lifecycle", () => {
     const handle = await mountWakeFireflies(env.parent, { seed: 7, trials: 1, onComplete });
     env.runFrames(0, 32);
     env.tap(40);
-    env.runFrames(48, 60_000);
+    playThrough(env, 48, 120);
     handle.destroy();
     vi.advanceTimersByTime(10_000);
     expect(onComplete).not.toHaveBeenCalled();

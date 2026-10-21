@@ -4,7 +4,8 @@ import { validScoreResult } from "../../../../../packages/contracts/src/fixtures
 import { validSessionMetrics } from "../../../../../packages/contracts/src/fixtures/session-metrics.valid";
 import type { Consent, UploadResult } from "../../../lib/play-client";
 import { runPlayFlow } from "./flow";
-import { DEFAULT_SKIP_HOLD_MS, DEFAULT_TRANSITION_MS, browserDom, createHoldDetector, createSessionChain, toMiniGameEntry, type ChainDeps, type ChainStep } from "./chain";
+import * as chainModule from "./chain";
+import { DEFAULT_SKIP_HOLD_MS, browserDom, createHoldDetector, createSessionChain, toMiniGameEntry, type ChainDeps, type ChainStep } from "./chain";
 import type { SessionGame } from "./game";
 
 const CHILD = "7d9e0a1b-2c3d-4e5f-8a9b-0c1d2e3f4a5b";
@@ -29,9 +30,9 @@ function harness(opts: { failing?: Record<string, "reject" | "throw" | "bad-resu
   const completers: Record<string, (r: unknown) => void> = {};
   const skips: Array<() => void> = [];
   let pendingLantern: SessionMetrics | undefined;
-  const waits: number[] = [];
-  let releaseWait: () => void = () => {};
-  let holdWait = false;
+  // The "Game n of 5" card waits for a tap (Hatem, 2026-10-21): by default the harness child taps at once.
+  const cardTaps: Array<() => void> = [];
+  let holdCard = false;
   let lanternDone: (m: SessionMetrics) => void = (m) => {
     pendingLantern = m; // Lantern Watch starts after its own card: remember a finish that comes early
   };
@@ -65,13 +66,7 @@ function harness(opts: { failing?: Record<string, "reject" | "throw" | "bad-resu
   const deps: ChainDeps = {
     lantern,
     steps,
-    transitionMs: 1234,
     skipHoldMs: 777,
-    wait: (ms) => {
-      waits.push(ms);
-      log.push(`wait:${ms}`);
-      return holdWait ? new Promise<void>((r) => (releaseWait = r)) : Promise.resolve();
-    },
     dom: {
       skip: (_el, onSkip, holdMs) => {
         log.push(`skip:on:${holdMs}`);
@@ -81,13 +76,13 @@ function harness(opts: { failing?: Record<string, "reject" | "throw" | "bad-resu
       slot: () => ({ el: {} as HTMLElement, remove: () => log.push("slot:remove") }),
       card: (_el, n, total) => {
         log.push(`card:${n}/${total}`);
-        return { remove: () => log.push(`card:remove:${n}`) };
+        const tapped = holdCard ? new Promise<void>((r) => cardTaps.push(r)) : Promise.resolve();
+        return { tapped, remove: () => log.push(`card:remove:${n}`) };
       },
     },
   };
   return {
     log,
-    waits,
     deps,
     lanternCalls,
     finishLantern: (m: SessionMetrics = lanternMetrics) => lanternDone(m),
@@ -95,8 +90,9 @@ function harness(opts: { failing?: Record<string, "reject" | "throw" | "bad-resu
     skip: () => skips.at(-1)?.(),
     skipAt: (i: number) => skips[i]?.(),
     skipsShown: () => skips.length,
-    hold: () => (holdWait = true),
-    release: () => releaseWait(),
+    hold: () => (holdCard = true),
+    release: () => cardTaps.shift()?.(),
+    cardsWaiting: () => cardTaps.length,
   };
 }
 
@@ -128,16 +124,14 @@ describe("createSessionChain: the order and the count", () => {
     expect(h.log.filter((l) => l.startsWith("card:") && !l.startsWith("card:remove"))).toEqual(["card:1/5", "card:2/5", "card:3/5", "card:4/5", "card:5/5"]);
   });
 
-  it("advances by itself: a card, the wait, then the next game, with no call from the parent", async () => {
+  it("advances without a call from the parent: a card, the child's tap, then the next game", async () => {
     const h = harness();
     createSessionChain(h.deps)({} as HTMLElement, CHILD, OFF);
     h.finishLantern();
     await flush();
     const i = (s: string) => h.log.indexOf(s);
     expect(i("lantern:done")).toBeLessThan(i("card:2/5"));
-    const w = h.log.indexOf("wait:1234", i("card:2/5"));
-    expect(i("card:2/5")).toBeLessThan(w);
-    expect(w).toBeLessThan(i("card:remove:2"));
+    expect(i("card:2/5")).toBeLessThan(i("card:remove:2"));
     expect(i("card:remove:2")).toBeLessThan(i("mount:star-path"));
     h.finish("star-path");
     await flush();
@@ -146,24 +140,40 @@ describe("createSessionChain: the order and the count", () => {
     expect(h.log).toContain("mount:bridge-wait");
   });
 
-  it("keeps a card on screen for the whole wait: the next game is not mounted before the wait ends", async () => {
+  it("keeps a card on screen until the child taps: no game starts, however long it takes", async () => {
+    vi.useFakeTimers();
     const h = harness();
     h.hold();
     createSessionChain(h.deps)({} as HTMLElement, CHILD, OFF);
-    await flush();
-    h.release(); // card 1 ends, Lantern Watch starts
-    await flush();
+    await vi.advanceTimersByTimeAsync(10 * 60_000); // ten minutes
+    expect(h.log).toEqual(["card:1/5"]); // the card is shown; Lantern Watch has not started
+    h.release(); // the child taps: card 1 ends, Lantern Watch starts
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.log).toContain("lantern:mount");
     h.finishLantern();
-    await flush();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(h.log).toContain("card:2/5");
     expect(h.log).not.toContain("mount:star-path");
+    expect(h.cardsWaiting()).toBe(1);
     h.release();
-    await flush();
+    await vi.advanceTimersByTimeAsync(0);
     expect(h.log).toContain("mount:star-path");
+    vi.useRealTimers();
   });
 
-  it("the card duration is a named TODO design choice", () => {
-    expect(DEFAULT_TRANSITION_MS).toBeGreaterThan(0);
+  it("destroying the chain while a card waits removes the card and starts nothing", async () => {
+    const h = harness();
+    h.hold();
+    const run = createSessionChain(h.deps)({} as HTMLElement, CHILD, OFF);
+    await flush();
+    run.destroy();
+    await flush();
+    expect(h.log).toContain("card:remove:1");
+    expect(h.log).not.toContain("lantern:mount");
+  });
+
+  it("has no card timer any more", () => {
+    expect("DEFAULT_TRANSITION_MS" in chainModule).toBe(false);
   });
 
   it("gives Lantern Watch the child, the consent and the unlocked audio context, as before", async () => {
@@ -483,5 +493,63 @@ describe("browserDom.skip on a touch screen (Chrome for Android long press)", ()
     browserDom.skip({ appendChild() {} } as unknown as HTMLElement, () => {}, 3000);
     for (const css of ["-webkit-touch-callout:none", "user-select:none", "-webkit-user-select:none", "touch-action:none"])
       expect(box.style.cssText).toContain(css);
+  });
+});
+
+describe("browserDom.card waits for the child's tap", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function fakeDoc() {
+    const made: Array<{ tag: string; textContent: string; style: { cssText: string }; listeners: Record<string, Array<() => void>>; removed: boolean }> = [];
+    vi.stubGlobal("document", {
+      createElement: (tag: string) => {
+        const node = {
+          tag,
+          textContent: "",
+          style: { cssText: "" },
+          listeners: {} as Record<string, Array<() => void>>,
+          removed: false,
+          setAttribute() {},
+          append() {},
+          addEventListener(type: string, fn: () => void) {
+            (node.listeners[type] ??= []).push(fn);
+          },
+          remove() {
+            node.removed = true;
+          },
+        };
+        made.push(node);
+        return node;
+      },
+    });
+    return made;
+  }
+
+  it("shows the title and a Start button, and settles only when the button is tapped", async () => {
+    vi.useFakeTimers();
+    const made = fakeDoc();
+    const card = browserDom.card({ appendChild() {} } as unknown as HTMLElement, 2, 5);
+    let settled = false;
+    void card.tapped.then(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(settled).toBe(false); // ten minutes: still on screen
+    const button = made.find((n) => n.tag === "button")!;
+    expect(button.textContent).toBe("Start");
+    expect(made.some((n) => n.textContent === "Game 2 of 5")).toBe(true);
+    expect(button.style.cssText).toMatch(/min-height:64px/);
+    button.listeners.click?.forEach((fn) => fn());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it("removing the card settles it too, so a destroyed chain does not hang", async () => {
+    fakeDoc();
+    const card = browserDom.card({ appendChild() {} } as unknown as HTMLElement, 1, 5);
+    let settled = false;
+    void card.tapped.then(() => (settled = true));
+    card.remove();
+    await Promise.resolve();
+    expect(settled).toBe(true);
   });
 });

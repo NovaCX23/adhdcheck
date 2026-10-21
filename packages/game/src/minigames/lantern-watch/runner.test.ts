@@ -27,6 +27,8 @@ function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; a
       onState: (s, ts) => {
         states.push({ s, ts });
         if (s === "break") pending.push({ t: ts + (opts.breakTapDelay ?? BREAK_MIN_MS + 100), lantern: null });
+        // The instruction stays until the child taps (Hatem, 2026-10-21): this child reads for 10 s, far longer than the old timers.
+        if (s === "calib-intro" || s === "practice-intro" || (s === "block-intro" && r.blockIndex === 0)) pending.push({ t: ts + 10_000, lantern: null });
       },
       onStimulus: (ts, trial) => {
         shown.push({ trial, onset: ts });
@@ -53,6 +55,64 @@ function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; a
   if (!data) throw new Error(`run never finished, state ${r.state}`);
   return { data: data as RunData, atComplete: atComplete as unknown as Trial[], shown, hidden, states, runner: r, addTap: (t: Tap) => (pending = [...pending, t]) };
 }
+
+describe("instructions wait for a tap (no timer)", () => {
+  function drive(until: RunState) {
+    const r = new LanternWatchRunner({ task: DEFAULT_TASK, seed: 42, anticipationMs: null });
+    let ts = 1000;
+    r.pointerDown(ts - 5, 0, 0, null);
+    const run = (ms: number) => {
+      for (const end = ts + ms; ts < end; ) {
+        ts += FRAME;
+        r.frame(ts);
+      }
+    };
+    run(100);
+    return { r, run, tap: () => (ts += 1, r.pointerDown(ts, 5, 5, null)), now: () => ts, until };
+  }
+
+  it("stays on the calibration instruction for 60 s, then leaves on a tap", () => {
+    const d = drive("calib-intro");
+    expect(d.r.state).toBe("calib-intro");
+    d.run(60_000);
+    expect(d.r.state).toBe("calib-intro");
+    expect(d.tap()).toBe("ready");
+    d.run(FRAME * 3);
+    expect(d.r.state).toBe("calib-practice");
+  });
+
+  it("stays on the practice instruction and on the first block instruction until a tap", () => {
+    const d = drive("practice-intro");
+    d.tap();
+    d.run(FRAME * 3);
+    // play calibration out with a perfect child is covered by the full run below; here reach practice-intro directly
+    const r = d.r as unknown as { setState(s: RunState, ts: number): void };
+    r.setState("practice-intro", d.now());
+    d.run(60_000);
+    expect(d.r.state).toBe("practice-intro");
+    expect(d.tap()).toBe("ready");
+    d.run(FRAME * 3);
+    expect(d.r.state).toBe("practice");
+    r.setState("block-intro", d.now());
+    d.run(60_000);
+    expect(d.r.state).toBe("block-intro");
+    expect(d.tap()).toBe("ready");
+    d.run(FRAME * 3);
+    expect(d.r.state).toBe("trials");
+  });
+
+  it("one tap leaves one instruction: a second tap in the next phase is not a ready tap", () => {
+    const d = drive("calib-intro");
+    expect(d.tap()).toBe("ready");
+    expect(d.tap()).toBe("ignored");
+  });
+
+  it("a tap stamped before the instruction appeared does not skip it", () => {
+    const d = drive("calib-intro");
+    expect(d.r.pointerDown(d.r.stateStartMs - 1, 5, 5, null)).toBe("ignored");
+    expect(d.r.state).toBe("calib-intro");
+  });
+});
 
 describe("LanternWatchRunner, a child who taps every firefly and no moth", () => {
   const { data, shown, hidden, states } = sim();

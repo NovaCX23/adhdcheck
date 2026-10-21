@@ -6,7 +6,8 @@ import { PRACTICE_PUZZLE, PUZZLES, judgeTap, optimalMoves, same, summarise } fro
 import type { Cell, Puzzle, PuzzleRecord, RoutePlannerResult, RouteTap } from "./types";
 
 // TODO: design choices, no sourced values (research/04 section 5 gives 4 puzzles, about 2 minutes).
-export const PRACTICE_INTRO_MS = 2000;
+// The practice instruction waits for a tap on "ready", with no timer (Hatem, 2026-10-21: the children need time to
+// read). The calm line between boards is feedback, not an instruction, and keeps its timer.
 export const BETWEEN_MS = 1600;
 /** A puzzle ends unsolved after this long without a tap, so a child who stops is not stuck. */
 export const IDLE_TIMEOUT_MS = 30_000;
@@ -38,6 +39,7 @@ export class RoutePlannerRunner {
   private readonly hooks: RunnerHooks;
   private readonly records: PuzzleRecord[] = [];
   private startRequested = false;
+  private readyRequested = false;
   private t0 = 0;
   private stateSince = 0;
   private next = -1; // -1 = practice board, then 0..3
@@ -54,6 +56,7 @@ export class RoutePlannerRunner {
   }
 
   private setState(s: RunState, ts: number) {
+    this.readyRequested = false;
     this.state = s;
     this.stateSince = ts;
     this.hooks.onState?.(s, ts, this.board);
@@ -68,7 +71,10 @@ export class RoutePlannerRunner {
       if (this.startRequested) this.setState("practice-intro", ts);
       return;
     }
-    if (this.state === "practice-intro" && ts - this.stateSince >= PRACTICE_INTRO_MS) return this.show(ts);
+    if (this.state === "practice-intro") {
+      if (this.readyRequested) this.show(ts);
+      return;
+    }
     if (this.state === "between" && ts - this.stateSince >= BETWEEN_MS) {
       if (this.next >= PUZZLES.length) return this.finish(ts);
       return this.show(ts);
@@ -132,12 +138,18 @@ export class RoutePlannerRunner {
   }
 
   /** tMs: pointerdown event.timeStamp. cell: the board cell under the finger, null outside the board. */
-  pointerDown(tMs: number, cell: Cell | null): "start" | "move" | "blocked" | "off" | "ignored" {
+  pointerDown(tMs: number, cell: Cell | null): "start" | "ready" | "move" | "blocked" | "off" | "ignored" {
     if (this.state === "intro") {
       if (this.startRequested) return "ignored";
       this.startRequested = true;
       this.t0 = tMs;
       return "start";
+    }
+    if (this.state === "practice-intro") {
+      // A tap stamped before the instruction appeared does not skip it.
+      if (this.readyRequested || tMs < this.stateSince) return "ignored";
+      this.readyRequested = true;
+      return "ready";
     }
     const b = this.board;
     if (this.state !== "puzzle" || !b || this.pendingBoard || this.finishedAt !== null) return "ignored";

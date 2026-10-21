@@ -41,7 +41,9 @@ import { glowTexture } from "../bridge-wait/world";
 import { StarTones } from "./audio";
 import { N_STARS } from "./logic";
 import { pickStar, starLayout } from "./layout";
-import { PRACTICE_INTRO_MS, StarPathRunner, type Current, type RunState } from "./runner";
+// TODO: design choice, no source: length of the sound that goes with Luma talking (a sound effect, not a display time).
+const BABBLE_MS = 2000;
+import { StarPathRunner, type Current, type RunState } from "./runner";
 import { isPrimaryPointer } from "../../pointer";
 import { STRINGS } from "./strings";
 import type { StarPathResult } from "./types";
@@ -298,10 +300,10 @@ export function createStarPathScene(parent: HTMLElement, opts: SceneOptions): { 
         parent.dataset.practice = practice ? "1" : "0";
         switch (s) {
           case "practice-intro":
-            ui.play(false);
+            ui.play(true); // the instruction stays until the child taps (no timer)
             ui.say(STRINGS.practiceIntro);
             setMode("talk", ts);
-            audio.babble(PRACTICE_INTRO_MS);
+            audio.babble(BABBLE_MS);
             break;
           case "present":
             ui.say(null);
@@ -325,6 +327,7 @@ export function createStarPathScene(parent: HTMLElement, opts: SceneOptions): { 
             sparkles.spawn(tmp.copy(lumaPos).setY(lumaPos.y + 1.2), 26, SPARK, 2.2, 750, -2.2);
             break;
           case "between":
+            ui.play(true);
             ui.say(STRINGS.realIntro);
             audio.play("ready", 0.6);
             setMode("talk", ts);
@@ -371,7 +374,10 @@ export function createStarPathScene(parent: HTMLElement, opts: SceneOptions): { 
         ? pickStar(starScreen(), e.clientX - rect.left, e.clientY - rect.top, hitRadius())
         : null;
     const kind = runner.pointerDown(e.timeStamp, star);
-    if (kind === "start") audio.play("start", 0.6);
+    if (kind === "start" || kind === "ready") {
+      ui.play(false);
+      audio.play("start", 0.6);
+    }
     // Every recall tap on a star lights it briefly, right or wrong (neutral acknowledgement).
     if ((kind === "next" || kind === "complete" || kind === "wrong") && star !== null) {
       const s = stars[star];
@@ -425,7 +431,7 @@ export function createStarPathScene(parent: HTMLElement, opts: SceneOptions): { 
       sy = 1 + 0.018 * Math.sin(ts * 0.0032);
       sx = 1 - 0.009 * Math.sin(ts * 0.0032);
       if (mode === "talk") {
-        talking = t < PRACTICE_INTRO_MS - 150 || lastState === "between";
+        talking = lastState === "practice-intro" || lastState === "between";
         lift = talking ? Math.abs(Math.sin(ts * 0.0105)) * 0.05 : 0;
         armL = armR = talking ? 0.35 + Math.sin(ts * 0.007) * 0.2 : 0;
       }

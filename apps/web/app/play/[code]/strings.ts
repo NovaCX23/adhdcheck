@@ -20,11 +20,13 @@ export const PLAY_STRINGS = {
 // {n} is the number of the game about to start, {total} how many games the session has. One idea, nothing about
 // results or how the child did (FR-15). Only "en" is shown today; "ro" is ready for when the play page is translated.
 export const TRANSITION_STRINGS = {
-  en: { title: "Game {n} of {total}", hint: "Get ready!" },
-  ro: { title: "Jocul {n} din {total}", hint: "Pregătește-te!" },
+  // `button` is the label of the button the child taps to start the game (the card waits for it, no timer).
+  // TODO (Person 4, texts owner): confirm "Start" in both languages; "Start" is the label already used on the play page.
+  en: { title: "Game {n} of {total}", hint: "Get ready!", button: "Start" },
+  ro: { title: "Jocul {n} din {total}", hint: "Pregătește-te!", button: "Start" },
 } as const;
 
 export function transitionText(lang: keyof typeof TRANSITION_STRINGS, n: number, total: number) {
   const t = TRANSITION_STRINGS[lang];
-  return { title: t.title.replace("{n}", String(n)).replace("{total}", String(total)), hint: t.hint };
+  return { title: t.title.replace("{n}", String(n)).replace("{total}", String(total)), hint: t.hint, button: t.button };
 }

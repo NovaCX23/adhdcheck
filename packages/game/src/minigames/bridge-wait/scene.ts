@@ -261,7 +261,7 @@ export function createBridgeWaitScene(parent: HTMLElement, opts: SceneOptions): 
         parent.dataset.practice = item?.practice ? "1" : "0";
         switch (s) {
           case "practice-intro":
-            ui.play(false);
+            ui.play(true); // the instruction stays until the child taps (no timer)
             ui.say(STRINGS.practiceIntro);
             setMode("hop", ts);
             break;
@@ -287,6 +287,7 @@ export function createBridgeWaitScene(parent: HTMLElement, opts: SceneOptions): 
             cueOffStart = ts;
             break;
           case "between":
+            ui.play(true);
             ui.say(STRINGS.realIntro);
             audio.play("ready", 0.6);
             if (mode !== "cross") setMode("hop", ts);
@@ -328,7 +329,10 @@ export function createBridgeWaitScene(parent: HTMLElement, opts: SceneOptions): 
     if (!isPrimaryPointer(e)) return; // a second finger is not a response
     audio.unlock(); // inside the gesture: required by iOS Safari
     const kind = runner.pointerDown(e.timeStamp);
-    if (kind === "start") audio.play("start", 0.6);
+    if (kind === "start" || kind === "ready") {
+      ui.play(false);
+      audio.play("start", 0.6);
+    }
   };
   const noMenu = (e: Event) => e.preventDefault();
   ui.root.addEventListener("pointerdown", onDown);

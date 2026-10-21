@@ -49,10 +49,10 @@ if (SLOTS.length !== N_SLOTS) throw new Error("SLOTS must match N_SLOTS");
 
 const WAKE_ANIM_MS = 700; // design choice: woken firefly flies up to the moon
 const SLEEP_ANIM_MS = 400; // design choice: unanswered firefly dims back, no sound
-const PHASE_PAUSE_MS = 1800; // design choice: bubble shown between practice and measured block
 const END_HOLD_MS = 2500; // design choice: celebration before onComplete
 
-type Stage = "intro" | "practice" | "between" | "real" | "end";
+// Three stages show an instruction and wait for a tap, with no timer: "intro", "practice-intro" and "between".
+type Stage = "intro" | "practice-intro" | "practice" | "between" | "real" | "end";
 
 type TrialState =
   | { kind: "wait"; until: number }
@@ -182,7 +182,12 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
     const t = e.timeStamp;
     chime.unlock();
     if (stage === "intro") {
-      startStage("practice", lastNow || performance.now());
+      startStage("practice-intro", lastNow || performance.now());
+      return;
+    }
+    if (stage === "practice-intro" || stage === "between") {
+      if (t < stageSince) return; // a tap stamped before the instruction appeared does not skip it
+      startStage(stage === "between" ? "real" : "practice", lastNow || performance.now());
       return;
     }
     if ((stage !== "practice" && stage !== "real") || trial.kind !== "lit" || trial.onset === null) return;
@@ -204,7 +209,6 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
   canvas.addEventListener("pointerdown", onPointerDown);
 
   function update(now: number) {
-    if (stage === "between" && now - stageSince >= PHASE_PAUSE_MS) startStage("real", now);
     if (stage !== "practice" && stage !== "real") return;
 
     if (trial.kind === "wait" && now >= trial.until) {
@@ -275,11 +279,11 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
           ? STRINGS.realIntro
           : stage === "end"
             ? STRINGS.done
-            : stage === "practice" && idx === 0 && trial.kind === "wait"
+            : stage === "practice-intro"
               ? STRINGS.practiceIntro
               : null;
     if (text) drawBubble(ctx!, text, lx + 52 * lumaS, ly - 70 * lumaS, Math.min(w - lx - 70 * lumaS, 420), lumaS);
-    if (stage === "intro") drawPlay(ctx!, w / 2, h * 0.42, Math.max(44, Math.min(w, h) * 0.09), now, reduceMotion);
+    if (stage === "intro" || stage === "practice-intro" || stage === "between") drawPlay(ctx!, w / 2, h * 0.42, Math.max(44, Math.min(w, h) * 0.09), now, reduceMotion);
   }
 
   const loop = (now: number) => {
