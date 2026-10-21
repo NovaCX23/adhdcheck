@@ -3,6 +3,7 @@
 // callback timestamp. A star lit in frame(ts) is drawn by the render call of that same callback, so ts is its
 // onset (research/03 section 2, method 4), as in Bridge Wait. pointerDown() takes the pointerdown
 // event.timeStamp and the star the scene found under the finger (null for none).
+import { START_ENABLE_MS } from "../../pointer";
 import { mulberry32 } from "../bridge-wait/logic";
 import {
   MAX_FAILURES_PER_LENGTH,
@@ -25,6 +26,9 @@ export const RECALL_GAP_MS = 300;
 /** A sequence ends as "timeout" after this long without a tap during recall. */
 export const RECALL_TIMEOUT_MS = 12_000;
 export const FEEDBACK_MS = 1200;
+// The practice instruction and "Now let's light up the sky together." wait for a tap on the Start button, with no
+// timer (Hatem, 2026-10-21: the children need time to read). After that tap each keeps the intro delay it had before.
+// TODO: design choices, no sourced value.
 export const PRACTICE_INTRO_MS = 2000;
 export const BETWEEN_MS = 1800;
 export const RESULT_VERSION = "0.1.0";
@@ -53,7 +57,7 @@ export interface RunnerHooks {
   onComplete?: (result: StarPathResult) => void;
 }
 
-export type TapKind = "start" | "next" | "complete" | "wrong" | "off" | "early" | "ignored";
+export type TapKind = "start" | "ready" | "next" | "complete" | "wrong" | "off" | "early" | "ignored";
 
 export class StarPathRunner {
   state: RunState = "intro";
@@ -63,6 +67,8 @@ export class StarPathRunner {
   private readonly rnd: () => number;
   private readonly records: SequenceRecord[] = [];
   private startRequested = false;
+  private readyRequested = false;
+  private readyAtMs = 0;
   private t0 = 0;
   private stateSince = 0;
   private cur: Current | undefined;
@@ -96,7 +102,26 @@ export class StarPathRunner {
     return this.stateSince;
   }
 
+  /** True when the Start button of the current instruction accepts a tap: it has been on screen START_ENABLE_MS. */
+  canReady(ts: number): boolean {
+    return this.waitsForReady() && !this.readyRequested && ts - this.stateSince >= START_ENABLE_MS;
+  }
+
+  /** The child tapped the Start button of an instruction. A tap stamped before the instruction appeared is ignored. */
+  ready(tMs: number): TapKind {
+    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince + START_ENABLE_MS) return "ignored";
+    this.readyRequested = true;
+    this.readyAtMs = tMs;
+    return "ready";
+  }
+
+  /** True while the state shows an instruction that waits for the child's tap on the Start button. */
+  waitsForReady(): boolean {
+    return this.state === "practice-intro" || this.state === "between";
+  }
+
   pointerDown(tMs: number, star: number | null): TapKind {
+    if (this.waitsForReady()) return "ignored"; // only the Start button leaves an instruction: the scene calls ready() for it
     if (this.state === "intro") {
       if (this.startRequested) return "ignored";
       this.startRequested = true;
@@ -133,7 +158,7 @@ export class StarPathRunner {
         }
         return;
       case "practice-intro":
-        if (ts - this.stateSince >= PRACTICE_INTRO_MS) this.startSequence(ts);
+        if (this.readyRequested && ts - this.readyAtMs >= PRACTICE_INTRO_MS) this.startSequence(ts);
         return;
       case "present":
         this.present(ts);
@@ -146,7 +171,7 @@ export class StarPathRunner {
         if (ts - this.stateSince >= FEEDBACK_MS) this.afterFeedback(ts);
         return;
       case "between":
-        if (ts - this.stateSince >= BETWEEN_MS) this.startSequence(ts);
+        if (this.readyRequested && ts - this.readyAtMs >= BETWEEN_MS) this.startSequence(ts);
         return;
       default:
         return;
@@ -177,6 +202,7 @@ export class StarPathRunner {
   }
 
   private setState(s: RunState, ts: number) {
+    this.readyRequested = false;
     this.state = s;
     this.stateSince = ts;
     this.hooks.onState?.(s, ts, this.cur);

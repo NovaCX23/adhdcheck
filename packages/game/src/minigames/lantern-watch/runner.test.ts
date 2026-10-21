@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { SessionMetricsSchema, type Trial } from "@adhdcheck/contracts";
 import { buildSchedule, DEFAULT_TASK, type TaskConfig } from "./logic";
 import { RESPONSE_WINDOW_MS } from "../wake-fireflies/logic";
-import { BREAK_MIN_MS, LATE_TAP_GRACE_MS, LanternWatchRunner, type ActiveTrial, type RunData, type RunState } from "./runner";
+import { START_ENABLE_MS } from "../../pointer";
+import { BLOCK_INTRO_MS, BREAK_MIN_MS, CALIB_INTRO_MS, LATE_TAP_GRACE_MS, PRACTICE_INTRO_MS, LanternWatchRunner, type ActiveTrial, type RunData, type RunState } from "./runner";
 import { buildSessionMetrics } from "./session";
 
 const FRAME = 1000 / 60;
@@ -13,11 +14,12 @@ type Tap = { t: number; lantern: number | null; x?: number; y?: number; deliver?
 type Child = (trial: ActiveTrial, onset: number) => Tap[];
 
 /** Drives the runner like the scene does: pending pointer events are dispatched before each frame callback. */
-function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; anticipationMs?: number | null; seed?: number } = {}) {
+function sim(opts: { doubleTapAfterReady?: number[]; task?: TaskConfig; child?: Child; breakTapDelay?: number; anticipationMs?: number | null; seed?: number } = {}) {
   const shown: { trial: ActiveTrial; onset: number }[] = [];
   const hidden: { trial: ActiveTrial; at: number }[] = [];
   const states: { s: RunState; ts: number }[] = [];
   let pending: Tap[] = [];
+  const readyAt: number[] = [];
   let data: RunData | null = null;
   let atComplete: Trial[] | null = null; // a copy of the records at the moment onComplete fires
   const child: Child = opts.child ?? ((tr, onset) => (tr.type === "nogo" ? [] : [{ t: onset + 400, lantern: tr.lantern }]));
@@ -27,6 +29,12 @@ function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; a
       onState: (s, ts) => {
         states.push({ s, ts });
         if (s === "break") pending.push({ t: ts + (opts.breakTapDelay ?? BREAK_MIN_MS + 100), lantern: null });
+        // The instruction stays until the child taps the Start button (Hatem, 2026-10-21): this child reads for 10 s,
+        // far longer than the old timers, then taps the button (ready) and, optionally, taps again a moment later.
+        if (s === "calib-intro" || s === "practice-intro" || (s === "block-intro" && r.blockIndex === 0)) {
+          readyAt.push(ts + 10_000);
+          for (const d of opts.doubleTapAfterReady ?? []) pending.push({ t: ts + 10_000 + d, lantern: null });
+        }
       },
       onStimulus: (ts, trial) => {
         shown.push({ trial, onset: ts });
@@ -43,6 +51,7 @@ function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; a
   r.pointerDown(ts - 5, 0, 0, null); // the start tap
   for (let k = 0; k < 400_000 && !data; k++) {
     ts += FRAME;
+    while (readyAt.length && (readyAt[0] as number) <= ts) r.ready(readyAt.shift() as number);
     pending.sort((a, b) => (a.deliver ?? a.t) - (b.deliver ?? b.t));
     while (pending.length && ((pending[0] as Tap).deliver ?? (pending[0] as Tap).t) <= ts) {
       const p = pending.shift() as Tap;
@@ -53,6 +62,109 @@ function sim(opts: { task?: TaskConfig; child?: Child; breakTapDelay?: number; a
   if (!data) throw new Error(`run never finished, state ${r.state}`);
   return { data: data as RunData, atComplete: atComplete as unknown as Trial[], shown, hidden, states, runner: r, addTap: (t: Tap) => (pending = [...pending, t]) };
 }
+
+describe("instructions wait for the Start button (no timer) and then keep their old intro delay", () => {
+  function drive() {
+    const r = new LanternWatchRunner({ task: DEFAULT_TASK, seed: 42, anticipationMs: null });
+    let ts = 1000;
+    r.pointerDown(ts - 5, 0, 0, null);
+    const run = (ms: number) => {
+      for (const end = ts + ms; ts < end; ) {
+        ts += FRAME;
+        r.frame(ts);
+      }
+    };
+    run(START_ENABLE_MS + 100); // the Start button is enabled once the instruction has been on screen START_ENABLE_MS
+    return { r, run, ready: () => ((ts += 1), r.ready(ts)), now: () => ts, tap: () => ((ts += 1), r.pointerDown(ts, 5, 5, null)) };
+  }
+
+  it("calibration instruction: any tap outside the button does nothing, for 60 s", () => {
+    const d = drive();
+    expect(d.r.state).toBe("calib-intro");
+    d.run(1000);
+    expect(d.tap()).toBe("ignored"); // not on the button: the scene never calls ready()
+    d.run(60_000);
+    expect(d.r.state).toBe("calib-intro");
+  });
+
+  it("calibration instruction: ready leaves only after CALIB_INTRO_MS (the old intro delay)", () => {
+    const d = drive();
+    expect(d.ready()).toBe("ready");
+    d.run(CALIB_INTRO_MS - 100);
+    expect(d.r.state).toBe("calib-intro");
+    d.run(200);
+    expect(d.r.state).toBe("calib-practice");
+  });
+
+  it("I-1: a double tap on 'Tap to start' (60, 120, 250 ms) does not pass the first instruction; a later single tap does", () => {
+    const r = new LanternWatchRunner({ task: DEFAULT_TASK, seed: 42, anticipationMs: null });
+    const startTap = 1000;
+    r.pointerDown(startTap, 0, 0, null);
+    let ts = startTap;
+    const run = (to: number) => {
+      while (ts < to) {
+        ts += FRAME;
+        r.frame(ts);
+      }
+    };
+    run(startTap + 20);
+    expect(r.state).toBe("calib-intro");
+    for (const d of [60, 120, 250]) {
+      run(startTap + d);
+      expect(r.ready(startTap + d)).toBe("ignored");
+    }
+    expect(r.canReady(ts)).toBe(false);
+    run(startTap + START_ENABLE_MS + 100);
+    expect(r.canReady(ts)).toBe(true);
+    expect(r.ready(ts)).toBe("ready");
+  });
+
+  it("a second ready tap is ignored", () => {
+    const d = drive();
+    expect(d.ready()).toBe("ready");
+    expect(d.ready()).toBe("ignored");
+  });
+
+  it("a ready tap stamped before the instruction appeared does not skip it", () => {
+    const d = drive();
+    expect(d.r.ready(d.r.stateStartMs - 1)).toBe("ignored");
+    expect(d.r.state).toBe("calib-intro");
+  });
+
+  it("practice instruction and first block instruction wait, then keep PRACTICE_INTRO_MS and BLOCK_INTRO_MS", () => {
+    const d = drive();
+    const r = d.r as unknown as { setState(s: RunState, ts: number): void };
+    r.setState("practice-intro", d.now());
+    d.run(60_000);
+    expect(d.r.state).toBe("practice-intro");
+    d.ready();
+    d.run(PRACTICE_INTRO_MS - 100);
+    expect(d.r.state).toBe("practice-intro");
+    d.run(200);
+    expect(d.r.state).toBe("practice");
+    r.setState("block-intro", d.now());
+    d.run(60_000);
+    expect(d.r.state).toBe("block-intro");
+    d.ready();
+    d.run(BLOCK_INTRO_MS - 100);
+    expect(d.r.state).toBe("block-intro");
+    d.run(200);
+    expect(d.r.state).toBe("trials");
+  });
+
+  it("I3: a double tap after the Start button (at 60, 120 and 250 ms) leaves no off-target record in the measured trials", () => {
+    const { data } = sim({ doubleTapAfterReady: [60, 120, 250] });
+    expect(data.off_target_taps).toEqual([]);
+    expect(data.trials.filter((t) => t.type !== "calibration")).toHaveLength(144);
+  });
+
+  it("I3 control: the same taps in the middle of a measured block ARE recorded (the check can fail)", () => {
+    const { data } = sim({
+      child: (tr, onset) => [...(tr.type === "nogo" ? [] : [{ t: onset + 400, lantern: tr.lantern }]), ...(tr.phase === "task" ? [{ t: onset + 700, lantern: null }] : [])],
+    });
+    expect(data.off_target_taps.length).toBeGreaterThan(0);
+  });
+});
 
 describe("LanternWatchRunner, a child who taps every firefly and no moth", () => {
   const { data, shown, hidden, states } = sim();
@@ -201,6 +313,22 @@ describe("LanternWatchRunner, errors and off-target taps", () => {
   it("classifies anticipations against the threshold when one is configured", () => {
     const { data } = sim({ task: small, anticipationMs: 150, child: (tr, on) => [{ t: on + 60, lantern: tr.lantern }] });
     for (const t of data.trials.filter((x) => x.type !== "calibration")) expect(t.outcome).toBe("anticipation");
+  });
+
+  it("I-2: a session with anticipationMs set, where fast taps hit go AND no-go trials, still builds a valid SessionMetrics", () => {
+    const { data } = sim({ task: small, anticipationMs: 150, child: (tr, on) => [{ t: on + 60, lantern: tr.lantern }] });
+    expect(data.trials.some((t) => t.type === "nogo" && t.outcome === "anticipation")).toBe(true);
+    const m = buildSessionMetrics({
+      sessionId: "0b6f1c2e-3d4a-4b5c-8d6e-7f8091a2b3c4",
+      childId: "1c2d3e4f-5a6b-4c7d-9e8f-0a1b2c3d4e5f",
+      startedAt: "2026-10-20T10:00:00.000Z",
+      durationMs: data.duration_ms,
+      task: small,
+      device: { user_agent: "synthetic", pointer_type: "touch", screen_w: 1024, screen_h: 768, device_pixel_ratio: 1, est_refresh_hz: 60, cross_origin_isolated: false, timer_clock: "event.timeStamp" },
+      trials: data.trials,
+      offTargetTaps: data.off_target_taps,
+    });
+    expect(SessionMetricsSchema.safeParse(m).success).toBe(true);
   });
 
   it("calibration follows PR #27: a firefly left untapped for RESPONSE_WINDOW_MS is an omission at 0, 0", () => {

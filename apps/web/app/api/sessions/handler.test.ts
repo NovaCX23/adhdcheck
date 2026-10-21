@@ -310,6 +310,7 @@ describe("POST /api/sessions with a Lantern Watch session (the game wired into /
     r.pointerDown(ts, 0, 0, null);
     for (let k = 0; k < 200_000 && !data; k++) {
       ts += 1000 / 60;
+      if (r.waitsForReady()) r.ready(ts); // the instructions wait for the child's tap on the Start button
       while (taps.length && (taps[0] as { t: number }).t <= ts) {
         const p = taps.shift() as { t: number; lantern: number | null };
         r.pointerDown(p.t, 100, 100, p.lantern);

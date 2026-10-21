@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LATER_DELAY_MS, NOW_DELAY_MS, PRACTICE_CHOICES, SLOT_MS } from "./logic";
-import { TreasureChoiceRunner, type RunState } from "./runner";
+import { START_ENABLE_MS } from "../../pointer";
+import { BETWEEN_MS, PRACTICE_INTRO_MS, TreasureChoiceRunner, type RunState } from "./runner";
 import type { Choice, TreasureChoiceResult } from "./types";
 
 function setup(choices = 10, frame = 16, seed = 11) {
@@ -30,7 +31,11 @@ function setup(choices = 10, frame = 16, seed = 11) {
     return ts;
   };
   const until = (pred: () => boolean, max = 100_000) => {
-    for (let k = 0; k < max && !pred(); k++) step();
+    // The instructions wait for a tap (Hatem, 2026-10-21): this child taps "ready" one frame after each appears.
+    for (let k = 0; k < max && !pred(); k++) {
+      if (r.waitsForReady()) r.ready(ts + 1);
+      step();
+    }
     if (!pred()) throw new Error(`state never reached, now ${r.state}`);
   };
   return {
@@ -72,6 +77,72 @@ function play(
   }
   return s;
 }
+
+describe("TreasureChoiceRunner instructions wait for the Start button (no timer), then keep their old intro delay", () => {
+  it("practice instruction: a tap anywhere does nothing for 60 s; ready leaves only after PRACTICE_INTRO_MS", () => {
+    const s = setup(1);
+    s.r.pointerDown(1001, null);
+    s.step();
+    expect(s.r.state).toBe("practice-intro");
+    for (let k = 0; k < 3750; k++) s.step();
+    expect(s.r.state).toBe("practice-intro");
+    expect(s.r.pointerDown(s.now() + 1, null)).toBe("ignored");
+    expect(s.r.ready(s.now() + 1)).toBe("ready");
+    expect(s.r.ready(s.now() + 2)).toBe("ignored");
+    for (let k = 0; k < (PRACTICE_INTRO_MS - 100) / 16; k++) s.step();
+    expect(s.r.state).toBe("practice-intro");
+    for (let k = 0; k < 20; k++) s.step();
+    expect(s.r.state).toBe("chest");
+  });
+
+  it("I-1: a double tap on 'Tap to start' (60, 120, 250 ms) does not pass the first instruction; a later single tap does", () => {
+    const s = setup(1);
+    s.r.pointerDown(1001, null);
+    s.step();
+    expect(s.r.state).toBe("practice-intro");
+    for (const d of [60, 120, 250]) {
+      while (s.now() < 1001 + d) s.step();
+      expect(s.r.ready(1001 + d)).toBe("ignored");
+    }
+    expect(s.r.canReady(s.now())).toBe(false);
+    while (s.now() < s.r.stateStartMs + START_ENABLE_MS + 20) s.step();
+    expect(s.r.canReady(s.now())).toBe(true);
+    expect(s.r.ready(s.now())).toBe("ready");
+  });
+
+  it("a ready tap stamped before the instruction appeared does not skip it", () => {
+    const s = setup(1);
+    s.r.pointerDown(1001, null);
+    s.step();
+    expect(s.r.ready(s.r.stateStartMs - 1)).toBe("ignored");
+    expect(s.r.state).toBe("practice-intro");
+  });
+
+  it("the sentence before the real game waits for the button; a double tap (60, 120, 250 ms) is not recorded in the first scored choice", () => {
+    const s = setup(1);
+    s.r.pointerDown(1001, null);
+    s.step();
+    for (let k = 0; k < PRACTICE_CHOICES; k++) {
+      s.until(() => s.r.state === "offer");
+      s.r.pointerDown(s.now() + 6, s.r.current()!.sched.only!);
+      s.step();
+      s.until(() => s.r.state !== "wait" && s.r.state !== "rest");
+    }
+    expect(s.r.state).toBe("between");
+    for (let k = 0; k < 3750; k++) s.step();
+    expect(s.r.state).toBe("between");
+    const t0 = s.now() + 1;
+    expect(s.r.ready(t0)).toBe("ready");
+    for (const d of [60, 120, 250]) {
+      while (s.now() < t0 + d) s.step();
+      expect(s.r.pointerDown(t0 + d, null)).toBe("ignored");
+    }
+    expect(s.r.state).toBe("between");
+    while (s.now() < t0 + BETWEEN_MS + 100) s.step();
+    expect(s.r.state).toBe("chest");
+    expect(s.r.current()?.practice).toBe(false);
+  });
+});
 
 describe("TreasureChoiceRunner (render loop wiring around logic.ts)", () => {
   it("starts on the first tap and opens the practice round in the next frame", () => {

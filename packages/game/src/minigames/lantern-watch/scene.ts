@@ -236,19 +236,20 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
         parent.dataset.phase = s;
         switch (s) {
           case "calib-intro":
-            ui.play(false);
+            ui.play(true); // the instruction stays until the child taps (no timer)
             ui.say(STRINGS.calibIntro);
             decorTarget = 0;
             setMode("talk", ts);
             audio.babble(1800);
             break;
           case "practice-intro":
+            ui.play(true);
             ui.say(STRINGS.practiceIntro);
             setMode("talk", ts);
             audio.babble(1800);
             break;
           case "block-intro":
-            ui.play(false);
+            ui.play(runner.waitsForReady()); // block 1 waits for a tap; "Here we go again!" does not
             ui.say(runner.blockIndex === 0 ? STRINGS.realIntro : STRINGS.again);
             decorTarget = 0;
             setMode("hop", ts);
@@ -354,6 +355,14 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
   const onDown = (e: PointerEvent) => {
     if (!isPrimaryPointer(e)) return; // a second finger is not a response
     audio.unlock(); // inside the gesture: required by iOS Safari
+    if (runner.waitsForReady()) {
+      // Only the Start button leaves an instruction: a tap elsewhere, or the second tap of a double tap, does nothing.
+      if (ui.playHit(e.clientX, e.clientY) && runner.ready(e.timeStamp) === "ready") {
+        ui.play(false);
+        audio.play("start", 0.6);
+      }
+      return;
+    }
     const r = ui.root.getBoundingClientRect();
     const state = runner.state;
     if (pointerKind === null && (state === "calib" || state === "trials")) {
@@ -495,6 +504,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
 
     // 1. Measurement state machine. May light a lantern for this very frame.
     runner.frame(ts);
+    ui.playEnabled(!runner.waitsForReady() || runner.canReady(ts));
     if (built && !metrics) {
       try {
         const data = built as RunData;

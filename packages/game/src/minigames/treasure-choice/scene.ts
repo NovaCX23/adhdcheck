@@ -219,7 +219,7 @@ export function createTreasureChoiceScene(parent: HTMLElement, opts: SceneOption
         parent.dataset.practice = it?.practice ? "1" : "0";
         switch (s) {
           case "practice-intro":
-            ui.play(false);
+            ui.play(true); // the instruction stays until the child taps (no timer)
             ui.bag(true);
             ui.say(STRINGS.practiceIntro);
             setMode("hop", ts);
@@ -252,6 +252,7 @@ export function createTreasureChoiceScene(parent: HTMLElement, opts: SceneOption
             fireflyTarget = 1;
             break;
           case "between":
+            ui.play(true);
             ui.say(STRINGS.realIntro);
             audio.play("ready", 0.6);
             setMode("hop", ts);
@@ -340,8 +341,19 @@ export function createTreasureChoiceScene(parent: HTMLElement, opts: SceneOption
   const onDown = (e: PointerEvent) => {
     if (!isPrimaryPointer(e)) return; // a second finger is not a response
     audio.unlock(); // inside the gesture: required by iOS Safari
+    if (runner.waitsForReady()) {
+      // Only the Start button leaves an instruction: a tap elsewhere, or the second tap of a double tap, does nothing.
+      if (ui.playHit(e.clientX, e.clientY) && runner.ready(e.timeStamp) === "ready") {
+        ui.play(false);
+        audio.play("start", 0.6);
+      }
+      return;
+    }
     const kind = runner.pointerDown(e.timeStamp, sideAt(e.clientX));
-    if (kind === "start") audio.play("start", 0.6);
+    if (kind === "start") {
+      ui.play(false);
+      audio.play("start", 0.6);
+    }
   };
   const noMenu = (e: Event) => e.preventDefault();
   ui.root.addEventListener("pointerdown", onDown);
@@ -612,6 +624,7 @@ export function createTreasureChoiceScene(parent: HTMLElement, opts: SceneOption
 
     // 1. Measurement state machine. May show the options for this very frame (offer onset).
     runner.frame(ts);
+    ui.playEnabled(!runner.waitsForReady() || runner.canReady(ts));
 
     // 2. Visuals. The phase attribute (for tests and the dev page) is re-asserted every frame: under React strict
     // mode a cancelled first mount is destroyed after the second one wrote it.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BridgeWaitRunner, NARRATION_MS, type RunState } from "./runner";
+import { START_ENABLE_MS } from "../../pointer";
+import { BETWEEN_MS, BridgeWaitRunner, NARRATION_MS, PRACTICE_INTRO_MS, type RunState } from "./runner";
 import { PRACTICE_TRIALS } from "./logic";
 import type { BridgeWaitResult } from "./types";
 
@@ -26,11 +27,78 @@ function setup(trials = 2) {
     return ts;
   };
   const until = (pred: () => boolean, max = 10_000) => {
-    for (let k = 0; k < max && !pred(); k++) step();
+    // The instructions wait for a tap (Hatem, 2026-10-21): this child taps "ready" one frame after each appears.
+    for (let k = 0; k < max && !pred(); k++) {
+      if (r.waitsForReady()) r.ready(ts + 1);
+      step();
+    }
     if (!pred()) throw new Error(`state never reached, now ${r.state}`);
   };
   return { r, cues, states, step, until, now: () => ts, result: () => result };
 }
+
+describe("BridgeWaitRunner instructions wait for the Start button (no timer), then keep their old intro delay", () => {
+  it("practice instruction: a tap anywhere does nothing for 60 s; ready leaves only after PRACTICE_INTRO_MS", () => {
+    const { r, step, now } = setup();
+    r.pointerDown(1001);
+    step();
+    for (let k = 0; k < 3750; k++) step(); // 60 s
+    expect(r.state).toBe("practice-intro");
+    expect(r.pointerDown(now() + 1)).toBe("ignored");
+    expect(r.ready(now() + 1)).toBe("ready");
+    expect(r.ready(now() + 2)).toBe("ignored");
+    for (let k = 0; k < (PRACTICE_INTRO_MS - 100) / 16; k++) step();
+    expect(r.state).toBe("practice-intro");
+    for (let k = 0; k < 20; k++) step();
+    expect(r.state).toBe("narration");
+  });
+
+  it("I-1: a double tap on 'Tap to start' (60, 120, 250 ms) does not pass the first instruction; a later single tap does", () => {
+    const { r, step, now } = setup();
+    r.pointerDown(1001);
+    step();
+    expect(r.state).toBe("practice-intro");
+    for (const d of [60, 120, 250]) {
+      while (now() < 1001 + d) step();
+      expect(r.ready(1001 + d)).toBe("ignored");
+    }
+    expect(r.canReady(now())).toBe(false);
+    while (now() < r.stateStartMs + START_ENABLE_MS + 20) step();
+    expect(r.canReady(now())).toBe(true);
+    expect(r.ready(now())).toBe("ready");
+  });
+
+  it("a ready tap stamped before the instruction appeared does not skip it", () => {
+    const { r, step } = setup();
+    r.pointerDown(1001);
+    step();
+    expect(r.ready(r.stateStartMs - 1)).toBe("ignored");
+    expect(r.state).toBe("practice-intro");
+  });
+
+  it("'Now we cross for real.': waits for the button, then BETWEEN_MS; a double tap (60, 120, 250 ms) is not recorded as a tap of the first scored trial", () => {
+    const { r, step, until, now, result } = setup(1);
+    r.pointerDown(1001);
+    step();
+    until(() => r.state === "between");
+    for (let k = 0; k < 3750; k++) step();
+    expect(r.state).toBe("between");
+    const t0 = now() + 1;
+    expect(r.ready(t0)).toBe("ready");
+    for (const d of [60, 120, 250]) {
+      while (now() < t0 + d) step();
+      expect(r.pointerDown(t0 + d)).toBe("ignored");
+    }
+    expect(r.state).toBe("between");
+    while (now() < t0 + BETWEEN_MS + 100) step();
+    expect(r.state).toBe("narration");
+    expect(r.current()?.practice).toBe(false);
+    until(() => r.state === "done", 100_000);
+    const rec = result()!.trials[0]!;
+    expect(rec.intrusionTaps).toBe(0);
+    expect(rec.prematureTaps).toBe(0);
+  });
+});
 
 describe("BridgeWaitRunner (render loop wiring around logic.ts)", () => {
   it("starts on the first tap and opens the practice round in the next frame", () => {
@@ -85,7 +153,7 @@ describe("BridgeWaitRunner (render loop wiring around logic.ts)", () => {
     expect((res as unknown as BridgeWaitResult).summary.intrusionTaps).toBe(1);
   });
 
-  it("ignores taps in intro after start, in the practice intro and after the end", () => {
+  it("ignores a second tap in intro, ignores a tap in the practice instruction (only the Start button leaves it), ignores taps after the end", () => {
     const { r, step, until } = setup(1);
     r.pointerDown(1001);
     expect(r.pointerDown(1002)).toBe("ignored");

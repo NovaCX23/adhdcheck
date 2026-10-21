@@ -8,16 +8,15 @@ import { ReportDownload } from "./ReportDownload";
 // The whole card and the next step are free for every parent (FR-35, FR-48, D-05). Only the report
 // download below the card is paid, and its paywall appears only after the server refuses the download.
 
-const RATE_KEYS = ["omission_rate", "commission_rate", "off_target_tap_rate"] as const;
-
-// Notes meant for developers (the placeholder scorer in packages/scoring writes "stub: ...") are not shown
+// Notes meant for developers (packages/scoring writes "dev: ..." and the old placeholder "stub: ...") are not shown
 // to parents. Every other data-quality note is.
 export function isParentNote(note: string) {
-  return !/^stub:/i.test(note.trim());
+  return !/^(stub|dev):/i.test(note.trim());
 }
 
 // Relative import: the tests render this card, and Vitest has no "@/" alias.
 import { formatDate } from "../../../lib/format";
+import { shownIndicators } from "../../../lib/indicators";
 export { formatDate };
 
 function Bar({ label, value, shown }: { label: string; value: number; shown: string }) {
@@ -40,6 +39,7 @@ export function ResultCard({ result }: { result: SessionResult }) {
   if (!score) return null;
   const text = BAND_TEXT[score.band];
   const pct = (v: number) => `${Math.round(v * 100)}%`;
+  const shown = shownIndicators(score);
   return (
     <article className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_0_rgb(31_27_58/0.06),0_8px_24px_rgb(31_27_58/0.06)]">
       <div className="bg-night px-5 py-6 text-moon sm:px-7">
@@ -62,14 +62,13 @@ export function ResultCard({ result }: { result: SessionResult }) {
             </ul>
           </div>
         )}
-        {score.band !== "insufficient_data" && (
+        {shown.length > 0 && (
           <div>
             <h4 className="font-display text-lg font-semibold">{S.result.indicators}</h4>
             <div className="mt-3 space-y-3">
-              {RATE_KEYS.map((k) => (
-                <Bar key={k} label={S.indicator[k]} value={score.indicators[k]} shown={pct(score.indicators[k])} />
+              {shown.map(({ key, value }) => (
+                <Bar key={key} label={S.indicator[key]} value={value} shown={key === "rt_cv" ? value.toFixed(2) : pct(value)} />
               ))}
-              <Bar label={S.indicator.rt_cv} value={score.indicators.rt_cv} shown={score.indicators.rt_cv.toFixed(2)} />
             </div>
             {!score.validated && <p className="mt-3 text-sm text-ink-muted">{S.result.notValidated}</p>}
           </div>

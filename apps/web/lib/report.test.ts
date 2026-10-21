@@ -55,7 +55,7 @@ describe("parent report PDF (D-05, FR-48)", () => {
     expect(text).toContain(S.result.indicators);
     expect(text).toContain(`${S.indicator.omission_rate}: 6%`);
     expect(text).toContain(`${S.indicator.commission_rate}: 22%`);
-    expect(text).toContain(`${S.indicator.off_target_tap_rate}: 12%`);
+    expect(text).not.toContain(S.indicator.off_target_tap_rate); // denominator undecided: computed, not shown
     expect(text).toContain(`${S.indicator.rt_cv}: 0.27`);
     expect(text).toContain(S.result.notValidated);
   });

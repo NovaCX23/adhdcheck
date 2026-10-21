@@ -1,3 +1,4 @@
+import { insideRect } from "../../pointer";
 // DOM layer over the 3D canvas: speech bubble, start button, practice hand and Luma's gem bag. Pointer events pass
 // through (pointer-events: none); the game container itself takes every pointerdown. Same look as Bridge Wait.
 // The bag is a collection: gems pile up inside it, and no number, count or progress bar is ever shown.
@@ -13,12 +14,14 @@ background:#fffdf7;color:#2a1f5c;font-size:clamp(19px,2.9vw,28px);line-height:1.
 box-shadow:0 5px 0 #d9cff5,0 14px 30px rgba(12,8,48,.38);transition:opacity .16s ease-out,transform .3s cubic-bezier(.16,1,.3,1)}
 .tc-bubble.on{opacity:1;transform:translate(-50%,-100%) scale(1)}
 .tc-tail{position:absolute;bottom:-15px;width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:17px solid #fffdf7;transform:translateX(-50%)}
-.tc-play{position:absolute;left:50%;top:72%;width:128px;height:128px;margin:-64px 0 0 -64px;border-radius:50%;
+.tc-play{position:absolute;left:50%;top:80%;width:128px;height:128px;margin:-64px 0 0 -64px;border-radius:50%;
 background:radial-gradient(circle at 35% 30%,#7ff0e1,#2fbfae 60%,#1f9e95);box-shadow:0 7px 0 #167a73,0 16px 30px rgba(12,8,48,.4),inset 0 -6px 0 rgba(0,0,0,.08);
 border:6px solid #fffdf7;transition:transform .25s cubic-bezier(.16,1,.3,1),opacity .2s ease-out}
 .tc-play::after{content:"";position:absolute;left:50%;top:50%;margin:-26px 0 0 -16px;border-left:44px solid #fffdf7;border-top:26px solid transparent;border-bottom:26px solid transparent;filter:drop-shadow(0 3px 0 rgba(22,122,115,.6))}
 .tc-play::before{content:"";position:absolute;inset:-18px;border-radius:50%;border:5px solid rgba(255,253,247,.55);animation:tc-ring 1.8s ease-out infinite}
 .tc-play.off{opacity:0;transform:scale(.4)}
+.tc-play.wait:not(.off){opacity:.4;filter:grayscale(.7)}
+.tc-play.wait::before{animation:none;opacity:0}
 @keyframes tc-ring{0%{transform:scale(.85);opacity:.9}100%{transform:scale(1.3);opacity:0}}
 .tc-hand{position:absolute;left:0;top:0;width:96px;height:118px;opacity:0;transition:opacity .2s ease-out;will-change:transform}
 .tc-hand.on{opacity:1}
@@ -66,6 +69,10 @@ export interface Ui {
   /** Place the bubble above a screen point (CSS pixels). */
   place: (x: number, y: number) => void;
   play: (on: boolean) => void;
+  /** True when the point (client pixels) is on the visible Start button: only a tap there leaves an instruction. */
+  playHit: (clientX: number, clientY: number) => boolean;
+  /** False draws the Start button visibly disabled (the instruction has not been on screen long enough). */
+  playEnabled: (on: boolean) => void;
   /** Show the practice hand with its fingertip at a screen point, or hide it (null). */
   handAt: (p: { x: number; y: number } | null) => void;
   bag: (on: boolean) => void;
@@ -113,6 +120,14 @@ export function buildUi(parent: HTMLElement): Ui {
   let w = 0;
   let h = 0;
   let popTimer = 0;
+  // The Start button is hidden (off) after an accepted tap, greyed (wait) while it is visible but not yet enabled. The two
+  // never combine: a hidden button must not show as a faded ghost.
+  let shown = true;
+  let enabled = true;
+  const paint = () => {
+    play.classList.toggle("off", !shown);
+    play.classList.toggle("wait", shown && !enabled);
+  };
   return {
     root,
     say(t) {
@@ -140,7 +155,15 @@ export function buildUi(parent: HTMLElement): Ui {
       tail.style.left = `${tailX.toFixed(1)}px`;
     },
     play(on) {
-      play.classList.toggle("off", !on);
+      shown = on;
+      paint();
+    },
+    playEnabled(on) {
+      enabled = on;
+      paint();
+    },
+    playHit(x, y) {
+      return shown && insideRect(x, y, play.getBoundingClientRect());
     },
     handAt(p) {
       if (!p) {

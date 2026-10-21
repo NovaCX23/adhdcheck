@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { STAR_INTERVAL_MS } from "./logic";
-import { FEEDBACK_MS, LEAD_MS, RECALL_TIMEOUT_MS, STAR_ON_MS, StarPathRunner, type Current } from "./runner";
+import { START_ENABLE_MS } from "../../pointer";
+import { BETWEEN_MS, FEEDBACK_MS, LEAD_MS, PRACTICE_INTRO_MS, RECALL_TIMEOUT_MS, STAR_ON_MS, StarPathRunner, type Current } from "./runner";
 import type { StarPathResult } from "./types";
 
 // Drives frames every 16 ms from `from` until `until(ts)` is true (or a safety limit).
 function run(r: StarPathRunner, from: number, until: (ts: number) => boolean, limitMs = 120_000): number {
   let ts = from;
   while (!until(ts) && ts < from + limitMs) {
+    // The instructions wait for a tap (Hatem, 2026-10-21): this child taps "ready" a frame after each appears.
+    if (r.waitsForReady()) r.ready(ts + 1);
     ts += 16;
     r.frame(ts);
   }
@@ -52,6 +55,79 @@ function failTwice(r: StarPathRunner, ts: number): number {
   }
   return ts;
 }
+
+describe("StarPathRunner instructions wait for the Start button (no timer), then keep their old intro delay", () => {
+  it("practice instruction: a tap anywhere does nothing for 60 s; ready leaves only after PRACTICE_INTRO_MS", () => {
+    const { r } = setup();
+    r.pointerDown(100, null);
+    r.frame(116);
+    expect(r.state).toBe("practice-intro");
+    let ts = 132;
+    for (; ts < 60_000; ts += 16) r.frame(ts);
+    expect(r.pointerDown(ts, null)).toBe("ignored");
+    expect(r.ready(ts + 1)).toBe("ready");
+    expect(r.ready(ts + 2)).toBe("ignored");
+    const t0 = ts + 1;
+    for (; ts < t0 + PRACTICE_INTRO_MS - 100; ts += 16) r.frame(ts);
+    expect(r.state).toBe("practice-intro");
+    for (let k = 0; k < 20; k++, ts += 16) r.frame(ts);
+    expect(r.state).toBe("present");
+  });
+
+  it("I-1: a double tap on 'Tap to start' (60, 120, 250 ms) does not pass the first instruction; a later single tap does", () => {
+    const { r } = setup();
+    r.pointerDown(100, null);
+    let ts = 100;
+    const to = (t: number) => {
+      for (; ts < t; ts += 16) r.frame(ts);
+    };
+    to(140);
+    expect(r.state).toBe("practice-intro");
+    for (const d of [60, 120, 250]) {
+      to(100 + d);
+      expect(r.ready(100 + d)).toBe("ignored");
+    }
+    expect(r.canReady(ts)).toBe(false);
+    to(r.stateStartMs + START_ENABLE_MS + 20);
+    expect(r.canReady(ts)).toBe(true);
+    expect(r.ready(ts)).toBe("ready");
+  });
+
+  it("a ready tap stamped before the instruction appeared does not skip it", () => {
+    const { r } = setup();
+    r.pointerDown(100, null);
+    r.frame(116);
+    expect(r.ready(r.stateStartMs - 1)).toBe("ignored");
+    expect(r.state).toBe("practice-intro");
+  });
+
+  it("the sentence between practice and the real game waits for the button; a double tap (60, 120, 250 ms) is not recorded as an early tap", () => {
+    const { r } = setup();
+    r.pointerDown(100, null);
+    let ts = run(r, 100, () => r.state === "recall");
+    for (const star of (r.current() as Current).sequence) {
+      ts += 300;
+      r.pointerDown(ts, star);
+    }
+    for (let k = 0; k < 2000 && r.state !== "between"; k++) {
+      ts += 16;
+      r.frame(ts);
+    }
+    expect(r.state).toBe("between");
+    for (const end = ts + 60_000; ts < end; ts += 16) r.frame(ts);
+    expect(r.state).toBe("between");
+    const t0 = ts + 1;
+    expect(r.ready(t0)).toBe("ready");
+    for (const d of [60, 120, 250]) {
+      for (; ts < t0 + d; ts += 16) r.frame(ts);
+      expect(r.pointerDown(t0 + d, null)).toBe("ignored");
+    }
+    expect(r.state).toBe("between");
+    for (; ts < t0 + BETWEEN_MS + 100; ts += 16) r.frame(ts);
+    expect(r.state).toBe("present");
+    expect((r.current() as Current).practice).toBe(false);
+  });
+});
 
 describe("StarPathRunner", () => {
   it("lights one star per 1000 ms, each onset being the frame time that draws it", () => {

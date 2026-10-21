@@ -17,7 +17,7 @@ import {
   summarise,
   toContractTrial,
 } from "./logic";
-import { isPrimaryPointer } from "../../pointer";
+import { START_ENABLE_MS, isPrimaryPointer } from "../../pointer";
 import { createChime } from "./audio";
 import { STRINGS } from "./strings";
 import type { RawTrial, ScheduledTrial, WakeFirefliesResult } from "./types";
@@ -49,10 +49,10 @@ if (SLOTS.length !== N_SLOTS) throw new Error("SLOTS must match N_SLOTS");
 
 const WAKE_ANIM_MS = 700; // design choice: woken firefly flies up to the moon
 const SLEEP_ANIM_MS = 400; // design choice: unanswered firefly dims back, no sound
-const PHASE_PAUSE_MS = 1800; // design choice: bubble shown between practice and measured block
 const END_HOLD_MS = 2500; // design choice: celebration before onComplete
 
-type Stage = "intro" | "practice" | "between" | "real" | "end";
+// Three stages show an instruction and wait for a tap, with no timer: "intro", "practice-intro" and "between".
+type Stage = "intro" | "practice-intro" | "practice" | "between" | "real" | "end";
 
 type TrialState =
   | { kind: "wait"; until: number }
@@ -122,6 +122,8 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
     return [s[0] * w, s[1] * h] as const;
   };
   const moon = () => [w * 0.86, h * 0.1] as const;
+  // The Start button drawn in draw(): the centre and the radius. Only a tap on it leaves an instruction.
+  const playGeom = () => [w / 2, h * 0.42, Math.max(44, Math.min(w, h) * 0.09)] as const;
 
   function startStage(next: Stage, now: number) {
     stage = next;
@@ -181,8 +183,15 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
     if (!isPrimaryPointer(e)) return; // a second finger is not a response
     const t = e.timeStamp;
     chime.unlock();
-    if (stage === "intro") {
-      startStage("practice", lastNow || performance.now());
+    if (stage === "intro" || stage === "practice-intro" || stage === "between") {
+      // Only a tap on the Start button leaves an instruction (a tap elsewhere, or the second tap of a double tap, does nothing).
+      const rect = canvas.getBoundingClientRect();
+      const [bx, by, br] = playGeom();
+      if (Math.hypot(e.clientX - rect.left - bx, e.clientY - rect.top - by) > br) return;
+      // A tap before the instruction has been on screen START_ENABLE_MS does not leave it (the first screen takes any
+      // tap on the button at once; the second tap of a double tap must not pass the practice instruction).
+      if (stage !== "intro" && t < stageSince + START_ENABLE_MS) return;
+      startStage(stage === "intro" ? "practice-intro" : stage === "between" ? "real" : "practice", lastNow || performance.now());
       return;
     }
     if ((stage !== "practice" && stage !== "real") || trial.kind !== "lit" || trial.onset === null) return;
@@ -204,7 +213,6 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
   canvas.addEventListener("pointerdown", onPointerDown);
 
   function update(now: number) {
-    if (stage === "between" && now - stageSince >= PHASE_PAUSE_MS) startStage("real", now);
     if (stage !== "practice" && stage !== "real") return;
 
     if (trial.kind === "wait" && now >= trial.until) {
@@ -275,11 +283,15 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
           ? STRINGS.realIntro
           : stage === "end"
             ? STRINGS.done
-            : stage === "practice" && idx === 0 && trial.kind === "wait"
+            : stage === "practice-intro"
               ? STRINGS.practiceIntro
               : null;
     if (text) drawBubble(ctx!, text, lx + 52 * lumaS, ly - 70 * lumaS, Math.min(w - lx - 70 * lumaS, 420), lumaS);
-    if (stage === "intro") drawPlay(ctx!, w / 2, h * 0.42, Math.max(44, Math.min(w, h) * 0.09), now, reduceMotion);
+    if (stage === "intro" || stage === "practice-intro" || stage === "between") {
+      ctx!.globalAlpha = stage === "intro" || now - stageSince >= START_ENABLE_MS ? 1 : 0.4; // visibly disabled until then
+      drawPlay(ctx!, ...playGeom(), now, reduceMotion);
+      ctx!.globalAlpha = 1;
+    }
   }
 
   const loop = (now: number) => {

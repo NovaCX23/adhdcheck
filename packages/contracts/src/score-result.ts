@@ -8,14 +8,16 @@ import { z } from "zod";
 
 const rate = z.number().min(0).max(1);
 
+// An indicator whose denominator is empty (no go trial, no hit, fewer than two hits for a spread) is null: "no data"
+// is never written as a real-looking 0. rules_v0 rows (the placeholder scorer) hold zeros and are not shown.
 export const IndicatorsSchema = z.strictObject({
-  omission_rate: rate,
-  commission_rate: rate,
-  rt_mean_ms: z.number().nonnegative(),
-  rt_sd_ms: z.number().nonnegative(),
-  rt_cv: z.number().nonnegative(),
-  vigilance_change: z.number(),
-  off_target_tap_rate: rate,
+  omission_rate: rate.nullable(),
+  commission_rate: rate.nullable(),
+  rt_mean_ms: z.number().nonnegative().nullable(),
+  rt_sd_ms: z.number().nonnegative().nullable(),
+  rt_cv: z.number().nonnegative().nullable(),
+  vigilance_change: z.number().nullable(),
+  off_target_tap_rate: rate.nullable(),
 });
 
 export const DataQualitySchema = z.strictObject({
@@ -27,7 +29,8 @@ export const DataQualitySchema = z.strictObject({
 export const ScoreResultSchema = z.strictObject({
   schema_version: z.literal("1.0"),
   session_id: z.uuid(),
-  scoring_method: z.literal("rules_v0"),
+  // rules_v0 = the placeholder scorer (rows already stored); rules_v1 = real indicators (docs/02 FR-25: a new value per change).
+  scoring_method: z.enum(["rules_v0", "rules_v1"]),
   validated: z.boolean(),
   indicators: IndicatorsSchema,
   flags: z.array(z.string()),

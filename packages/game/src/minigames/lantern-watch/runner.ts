@@ -8,6 +8,7 @@
 // practice (not recorded, FR-02), then task.blocks blocks with a child-paced break between blocks, then done.
 // Calibration follows the rules of mini-game 0, PR #27 (../wake-fireflies/logic.ts): its waits, its practice
 // count, its response window, its trial mapping (hit or omission, omission at 0, 0) and its summary.
+import { START_ENABLE_MS } from "../../pointer";
 import type { Trial } from "@adhdcheck/contracts";
 import {
   buildCalibrationSchedule,
@@ -21,6 +22,11 @@ import {
 import type { OffTargetTap } from "./session";
 import { PRACTICE_TRIALS as CALIB_PRACTICE_TRIALS, RESPONSE_WINDOW_MS, toContractTrial } from "../wake-fireflies/logic";
 
+// TODO: design choices, no sourced value (research/03 and 04 give none of these).
+// The three instructions (calibration, practice, first block) wait for a tap on the Start button, with no timer
+// (Hatem, 2026-10-21: the children need time to read). After that tap each keeps the intro delay it had before
+// (the values below), so a second tap of a double tap never lands in a measured trial. The short "Here we go again!"
+// before blocks 2 and 3 still runs on a timer from its start, because the child has just tapped to continue.
 // TODO: design choices, no sourced value (research/03 and 04 give none of these).
 export const CALIB_INTRO_MS = 2600;
 export const PRACTICE_INTRO_MS = 2600;
@@ -84,10 +90,12 @@ export interface RunnerHooks {
   onComplete?: (data: RunData) => void;
 }
 
-export type TapKind = "start" | "response" | "off-target" | "continue" | "ignored";
+export type TapKind = "start" | "ready" | "response" | "off-target" | "continue" | "ignored";
 
 export class LanternWatchRunner {
   state: RunState = "intro";
+  private readyRequested = false;
+  private readyAtMs = 0;
   private readonly task: TaskConfig;
   private readonly anticipationMs: number | null;
   private readonly hooks: RunnerHooks;
@@ -170,6 +178,10 @@ export class LanternWatchRunner {
         if (this.startRequested) return "ignored";
         this.startRequested = true;
         return "start";
+      case "calib-intro":
+      case "practice-intro":
+      case "block-intro":
+        return "ignored"; // only the Start button leaves an instruction: the scene calls ready() for it
       case "break":
         if (this.continueRequested || tMs - this.since < BREAK_MIN_MS) return "ignored";
         this.continueRequested = true;
@@ -214,7 +226,7 @@ export class LanternWatchRunner {
         }
         return;
       case "calib-intro":
-        if (ts - this.since >= CALIB_INTRO_MS) {
+        if (this.readyRequested && ts - this.readyAtMs >= CALIB_INTRO_MS) {
           this.idx = -1;
           this.setState("calib-practice", ts);
           this.nextCalibration(ts);
@@ -225,14 +237,14 @@ export class LanternWatchRunner {
         this.frameCalibration(ts);
         return;
       case "practice-intro":
-        if (ts - this.since >= PRACTICE_INTRO_MS) {
+        if (this.readyRequested && ts - this.readyAtMs >= PRACTICE_INTRO_MS) {
           this.idx = -1;
           this.setState("practice", ts);
           this.nextTimed(ts);
         }
         return;
       case "block-intro":
-        if (ts - this.since >= BLOCK_INTRO_MS) {
+        if (this.waitsForReady() ? this.readyRequested && ts - this.readyAtMs >= BLOCK_INTRO_MS : ts - this.since >= BLOCK_INTRO_MS) {
           this.setState("trials", ts);
           this.nextTimed(ts);
         }
@@ -256,7 +268,26 @@ export class LanternWatchRunner {
     }
   }
 
+  /** True when the Start button of the current instruction accepts a tap: it has been on screen START_ENABLE_MS. */
+  canReady(ts: number): boolean {
+    return this.waitsForReady() && !this.readyRequested && ts - this.since >= START_ENABLE_MS;
+  }
+
+  /** The child tapped the Start button of an instruction. A tap stamped before the instruction appeared is ignored. */
+  ready(tMs: number): TapKind {
+    if (!this.waitsForReady() || this.readyRequested || tMs < this.since + START_ENABLE_MS) return "ignored";
+    this.readyRequested = true;
+    this.readyAtMs = tMs;
+    return "ready";
+  }
+
+  /** True while the state shows an instruction that waits for the child's tap on the Start button. */
+  waitsForReady(): boolean {
+    return this.state === "calib-intro" || this.state === "practice-intro" || (this.state === "block-intro" && this.block === 0);
+  }
+
   private setState(s: RunState, ts: number) {
+    this.readyRequested = false;
     this.state = s;
     this.since = ts;
     this.hooks.onState?.(s, ts);

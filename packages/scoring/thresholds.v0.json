@@ -1,0 +1,13 @@
+{
+  "validated": false,
+  "label": "illustrative, not clinically validated",
+  "note": "Every value is null on purpose: no document in docs/ or research/ gives a sourced value (docs/02 FR-20, FR-22, FR-23, D-04 say TODO; research/03 section 4: no verified paediatric norms). While any value below is null the scorer computes the indicators and returns band insufficient_data. Filling them in switches the bands on with no code change. A change of any value needs a new scoring_method (docs/02 FR-25).",
+  "min_trials": null,
+  "min_hits": null,
+  "max_anticipation_share": null,
+  "max": {
+    "rt_cv": null,
+    "commission_rate": null,
+    "omission_rate": null
+  }
+}

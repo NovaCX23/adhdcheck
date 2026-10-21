@@ -3,12 +3,10 @@
 import type { BridgeWaitResult } from "./types";
 
 export {
-  BETWEEN_MS,
   CROW_DELAY_MS,
   GO_WINDOW_MS,
   ITI_MS,
   NARRATION_MS,
-  PRACTICE_INTRO_MS,
   RESULT_VERSION,
 } from "./runner";
 

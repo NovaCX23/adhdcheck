@@ -1,6 +1,7 @@
 // Lifecycle of the mounted game, with a minimal fake DOM (vitest runs in node). No tap is needed after
 // the intro: every firefly that is not tapped falls asleep, so the game reaches its end by time alone.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { START_ENABLE_MS } from "../../pointer";
 import { mountWakeFireflies } from "./mount";
 
 type Listener = (e: unknown) => void;
@@ -10,11 +11,14 @@ function fakeEnvironment() {
   const frames: Array<(t: number) => void> = [];
   const noop = () => undefined;
   const gradient = { addColorStop: noop };
+  const texts: string[] = [];
   const ctx = new Proxy(
     {},
     {
       get: (_t, key) =>
-        key === "createRadialGradient" || key === "createLinearGradient"
+        key === "fillText"
+          ? (t: string) => texts.push(t)
+          : key === "createRadialGradient" || key === "createLinearGradient"
           ? () => gradient
           : key === "measureText"
             ? () => ({ width: 10 })
@@ -45,8 +49,12 @@ function fakeEnvironment() {
   const parent = { appendChild: noop } as unknown as HTMLElement;
   return {
     parent,
-    tap: (timeStamp: number) =>
-      listeners.get("pointerdown")?.({ timeStamp, isPrimary: true, pointerType: "touch", button: 0, clientX: 1, clientY: 1 }),
+    // Every line of text drawn so far, joined: what the child could read.
+    shown: () => texts.join(" "),
+    clearShown: () => void (texts.length = 0),
+    // Default: on the Start button (centre x 400, y 252 of the 800 x 600 canvas, radius 54); (1, 1) is far from it.
+    tap: (timeStamp: number, clientX = 400, clientY = 252) =>
+      listeners.get("pointerdown")?.({ timeStamp, isPrimary: true, pointerType: "touch", button: 0, clientX, clientY }),
     // Runs queued animation frames up to the given time, 16 ms apart.
     runFrames(from: number, to: number) {
       for (let t = from; t <= to; t += 16) {
@@ -58,22 +66,84 @@ function fakeEnvironment() {
   };
 }
 
-describe("mountWakeFireflies lifecycle", () => {
+// The instructions stay on screen until the child taps (Hatem, 2026-10-21): the intro, the practice instruction and
+// the sentence between practice and the measured block each wait for a tap. A tap away from a firefly does nothing
+// during the trials, so a child who taps every 700 ms simulates "reads, then taps ready" without waking anything.
+function playThrough(env: ReturnType<typeof fakeEnvironment>, from: number, seconds: number) {
+  let t = from;
+  for (const end = from + seconds * 1000; t < end; t += 700) {
+    env.runFrames(t, t + 688);
+    env.tap(t + 696);
+  }
+  return t;
+}
+
+describe("mountWakeFireflies instructions wait for a tap", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
-  it("reports the result once when left to finish", async () => {
+  it("does not move on by itself: 10 minutes of frames after the first tap, no second tap, no result", async () => {
+    const env = fakeEnvironment();
+    const onComplete = vi.fn();
+    await mountWakeFireflies(env.parent, { seed: 7, trials: 1, onComplete });
+    env.runFrames(0, 32);
+    env.tap(40); // intro tap
+    env.runFrames(48, 600_000);
+    vi.advanceTimersByTime(60_000);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("I3: a tap away from the Start button does not leave an instruction, a tap on it does", async () => {
+    const env = fakeEnvironment();
+    await mountWakeFireflies(env.parent, { seed: 7, trials: 1, onComplete: vi.fn() });
+    env.runFrames(0, 32);
+    env.tap(40, 1, 1); // away from the button
+    env.runFrames(48, 2000);
+    expect(env.shown()).not.toContain("When a firefly glows"); // still the first instruction
+    env.tap(2010); // on the button
+    env.runFrames(2016, 3000);
+    expect(env.shown()).toContain("When a firefly glows");
+  });
+
+  it("I-1: a double tap on the first screen (60, 120, 250 ms) does not pass the practice instruction; a later single tap does", async () => {
+    const env = fakeEnvironment();
+    await mountWakeFireflies(env.parent, { seed: 7, trials: 1, onComplete: vi.fn() });
+    env.runFrames(0, 32);
+    env.tap(40); // first tap: the first screen -> the practice instruction
+    for (const d of [60, 120, 250]) {
+      env.runFrames(48, 40 + d);
+      env.tap(40 + d);
+    }
+    env.clearShown();
+    env.runFrames(300, 600);
+    expect(env.shown()).toContain("When a firefly glows"); // still the instruction
+    env.runFrames(608, 40 + START_ENABLE_MS + 100);
+    env.tap(40 + START_ENABLE_MS + 110); // enabled by now
+    env.clearShown();
+    env.runFrames(40 + START_ENABLE_MS + 120, 40 + START_ENABLE_MS + 400);
+    expect(env.shown()).not.toContain("When a firefly glows");
+  });
+
+  it("finishes once when the child taps through the instructions", async () => {
     const env = fakeEnvironment();
     const onComplete = vi.fn();
     await mountWakeFireflies(env.parent, { seed: 7, trials: 1, onComplete });
     env.runFrames(0, 32);
     env.tap(40);
-    env.runFrames(48, 60_000);
+    playThrough(env, 48, 120);
     vi.advanceTimersByTime(10_000);
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("mountWakeFireflies lifecycle", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("never reports a result after it has been destroyed during the end hold", async () => {
@@ -82,7 +152,7 @@ describe("mountWakeFireflies lifecycle", () => {
     const handle = await mountWakeFireflies(env.parent, { seed: 7, trials: 1, onComplete });
     env.runFrames(0, 32);
     env.tap(40);
-    env.runFrames(48, 60_000);
+    playThrough(env, 48, 120);
     handle.destroy();
     vi.advanceTimersByTime(10_000);
     expect(onComplete).not.toHaveBeenCalled();

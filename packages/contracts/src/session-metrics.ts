@@ -39,7 +39,22 @@ export const TrialSchema = z.strictObject({
   outcome: z.enum(["hit", "omission", "correct_reject", "commission", "anticipation"]),
   x: z.number(),
   y: z.number(),
-});
+})
+  // FR-21 "Client-side scores are never trusted": a trial whose outcome contradicts its type, `responded` or `rt_ms`
+  // is rejected, so the scorer never counts it. A response (hit, commission, anticipation) carries an rt_ms; no response
+  // (omission, correct_reject) carries none. go: hit, omission or anticipation. nogo: correct_reject, commission or
+  // anticipation (classify() in lantern-watch/logic.ts, research/04 line 234, returns anticipation for a fast tap on any trial type).
+  // calibration: hit or omission (research/04 section 5, calibration has no no-go).
+  .refine(
+    (t) => {
+      const responseOutcome = t.outcome === "hit" || t.outcome === "commission" || t.outcome === "anticipation";
+      if (t.responded !== responseOutcome || (t.rt_ms !== null) !== t.responded) return false;
+      if (t.type === "go") return t.outcome === "hit" || t.outcome === "omission" || t.outcome === "anticipation";
+      if (t.type === "nogo") return t.outcome === "correct_reject" || t.outcome === "commission" || t.outcome === "anticipation";
+      return t.outcome === "hit" || t.outcome === "omission";
+    },
+    { message: "outcome_contradicts_trial" },
+  );
 
 export const OffTargetTapSchema = z.strictObject({
   t_ms: ms,
