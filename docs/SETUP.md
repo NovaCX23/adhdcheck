@@ -126,6 +126,8 @@ The landing page merged first (PR 1) with a `package-lock.json` and npm scripts,
 
 ## 7. Known traps and fixes
 
+- **Database migrations are applied by hand, never with `supabase db push`.** The live project records only three migration versions in its history although later ones were applied by hand, so a push would fail. Apply the file in the SQL editor (or `apply_migration`) before merging the code that needs it. Details: `supabase/migrations/README.md`. Pending: `20261022110000_minigames_and_link_grace.sql`.
+
 | Trap | Fix |
 |---|---|
 | Phaser reads `window` when imported, so a normal import crashes server rendering ("window is not defined") | `packages/game` imports Phaser inside `mountGame`. `app/play/PlayClient.tsx` loads the canvas with `next/dynamic` and `ssr: false`, which is only allowed inside a Client Component. Never import `phaser` at the top of a file a Server Component can reach |

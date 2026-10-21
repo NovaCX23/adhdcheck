@@ -38,6 +38,15 @@ export async function runPlayFlow(code: string, deps: FlowDeps, signal?: AbortSi
   deps.show({ kind: "ready", consent: link.consent });
   await deps.waitForStart();
   if (gone()) return;
+  // The start screen can wait a long time and the link has a lifetime, so it is checked again at the tap: an
+  // expired link gets the neutral "ask your parent" screen instead of a game whose result could not be saved (M2).
+  // No answer at all (the network is down) does not block the child: the first answer stands.
+  const again = await deps.resolve(code).then(
+    (l) => l,
+    () => undefined,
+  );
+  if (gone()) return;
+  if (again === null) return deps.show({ kind: "invalid" });
   deps.show({ kind: "playing" });
   const metrics = await deps.play(link.child_id, link.consent);
   if (gone()) return;

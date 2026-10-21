@@ -122,7 +122,7 @@ Each FR has an acceptance criterion (AC) that a teammate can test.
 
 ### 4.1b Further mini-games (from 04 section 5, PROPOSAL)
 
-04 section 5 designs a core of mini-games 0 to 5 in about 13.4 minutes of play, with Route Planner optional outside that core. Durations, trial counts and timings are design choices of 04, not sourced values. Their data need the proposed `minigames` field (PC-02 in section 10.3); until the interface owner accepts it, these mini-games cannot be uploaded in the v1 contract, so their hackathon priority is low.
+04 section 5 designs a core of mini-games 0 to 5 in about 13.4 minutes of play, with Route Planner optional outside that core. Durations, trial counts and timings are design choices of 04, not sourced values. Their data need the proposed `minigames` field (PC-02 in section 10.3); PC-02 was accepted on 2026-10-20 (section 10.3): one `/play/<code>` session now plays Lantern Watch (with its calibration), Star Path, Bridge Wait, Treasure Choice and Route Planner in a row and uploads once at the end, with the four results in `minigames`. Storm Watch (FR-60) is not built and is not in the chain. A mini-game that fails to start is skipped and recorded as `results: { status: "skipped", reason }` (version "none"): an implementation choice, not in the PC-02 text.
 
 | ID | Requirement | Priority | Acceptance criterion | Traces to |
 |---|---|---|---|---|
@@ -393,9 +393,12 @@ Copied from 03 section 11. These contracts freeze at M1 (H+6, 03 section 12) and
     }
   ],
   "off_target_taps": [{ "t_ms": 0, "during": "isi | stimulus" }],
-  "calibration": { "median_rt_ms": 0, "n": 0 }
+  "calibration": { "median_rt_ms": 0, "n": 0 },
+  "minigames": [{ "id": "star-path | bridge-wait | treasure-choice | route-planner", "version": "0.1.0", "params": {}, "trials": [], "results": {} }]
 }
 ```
+
+`minigames` is optional (PC-02, accepted 2026-10-20): the results of the mini-games played after Lantern Watch, at most one entry per game, each with `trials` or `results` or both. Lantern Watch and its calibration stay in `trials`, `calibration` and `task`.
 
 ### 7.2 `ScoreResult` v1 (scoring to dashboard)
 
@@ -423,7 +426,7 @@ Copied from 03 section 11. These contracts freeze at M1 (H+6, 03 section 12) and
 }
 ```
 
-Usage constraint on `recommendations` (NFR-52, FR-26): it holds the fixed next-step sentence only, never mission IDs chosen from the score. The contracts above are copied unchanged from 03; the changes proposed by 04 (rename to `next_step_text`, optional `minigames` field) are listed in section 10.3 and are not applied.
+Usage constraint on `recommendations` (NFR-52, FR-26): it holds the fixed next-step sentence only, never mission IDs chosen from the score. The contracts above are copied from 03; the changes proposed by 04 are listed in section 10.3. Applied: the optional `minigames` field of `SessionMetrics` (PC-02, accepted 2026-10-20). Not applied: the rename to `next_step_text` (PC-01).
 
 ### 7.3 HTTP endpoints
 
@@ -512,7 +515,7 @@ Proposed by `research/04-game-design-symptom-mapping.md`. The contracts in secti
 | ID | Proposed change | Reason given in 04 | Impact | Owner | Status |
 |---|---|---|---|---|---|
 | PC-01 | Rename `ScoreResult.recommendations` to `next_step_text`, filled only with the fixed orientation sentence; no mission IDs from the score | Missions are chosen by the parent or a professional, never auto-prescribed (04 section 0; Rule 22, 02 Part 2.4 item 4) | `ScoreResult` to a new version; scorer, API and dashboard updates; FR-26 then tests the new field | Interface owner (TODO: name), with R2 and R3 | PROPOSED |
-| PC-02 | Add an optional `minigames` array to `SessionMetrics` (one entry per mini-game with `id`, `version`, `params` and `trials` or `results`). The same 04 block also proposes optional `motion` (device-motion RMS per mini-game) and `context` (`on_adhd_medication`, `age_band`) objects | Mini-games 0 and 2 to 5 need somewhere to put their data (04 section 5) | Additive; zod schema update. `context.on_adhd_medication` is health data about the child and needs R5 privacy review (NFR-01, NFR-04) before acceptance | Interface owner (TODO: name), with R1, R2 and R3 | PROPOSED |
+| PC-02 | Add an optional `minigames` array to `SessionMetrics` (one entry per mini-game with `id`, `version`, `params` and `trials` or `results`). The same 04 block also proposes optional `motion` (device-motion RMS per mini-game) and `context` (`on_adhd_medication`, `age_band`) objects | Mini-games 0 and 2 to 5 need somewhere to put their data (04 section 5) | Additive; zod schema update. `context.on_adhd_medication` is health data about the child and needs R5 privacy review (NFR-01, NFR-04) before acceptance | Interface owner (TODO: name), with R1, R2 and R3 | ACCEPTED by Hatem, 2026-10-20, for the `minigames` array; applied in `packages/contracts/src/session-metrics.ts` (`MiniGameEntrySchema`), `sessions.minigames` (migration `20261022110000_minigames_and_link_grace.sql`, not applied by the PR). `motion` and `context` are NOT accepted yet: `context` needs the R5 privacy review above, and no device motion is captured |
 | PC-03 | Additive indicators in `ScoreResult.indicators` (d', anticipation rate, ex-Gaussian parameters) and `vigilance_change` split into named parts | 04 section 7.2 | Additive; scorer and dashboard | Interface owner (TODO: name), with R2 | PROPOSED |
 | PC-04 | Optional `camera` and `microphone` blocks in `SessionMetrics` (fields and units in 06), v1 unchanged | D-17; 06 | Additive; strict schema; R5 privacy review | Interface owner (TODO: name), with R2 and R3 | PROPOSED |
 
