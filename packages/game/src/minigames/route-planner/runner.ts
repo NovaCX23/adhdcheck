@@ -2,6 +2,7 @@
 // As in Bridge Wait and Star Path, the view calls frame(ts) at the top of every requestAnimationFrame callback,
 // BEFORE it renders: a board shown in frame(ts) is drawn by that callback's render, so ts is its onset
 // (research/03 section 2). pointerDown() takes the pointerdown event.timeStamp and the cell under the finger.
+import { START_ENABLE_MS } from "../../pointer";
 import { PRACTICE_PUZZLE, PUZZLES, judgeTap, optimalMoves, same, summarise } from "./logic";
 import type { Cell, Puzzle, PuzzleRecord, RoutePlannerResult, RouteTap } from "./types";
 
@@ -146,9 +147,14 @@ export class RoutePlannerRunner {
     return this.state === "practice-intro";
   }
 
+  /** True when the Start button of the current instruction accepts a tap: it has been on screen START_ENABLE_MS. */
+  canReady(ts: number): boolean {
+    return this.waitsForReady() && !this.readyRequested && ts - this.stateSince >= START_ENABLE_MS;
+  }
+
   /** The child tapped the Start button. A tap stamped before the instruction appeared is ignored. */
   ready(tMs: number): "ready" | "ignored" {
-    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince) return "ignored";
+    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince + START_ENABLE_MS) return "ignored";
     this.readyRequested = true;
     this.readyAtMs = tMs;
     return "ready";

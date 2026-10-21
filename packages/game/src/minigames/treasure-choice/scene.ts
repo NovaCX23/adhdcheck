@@ -624,6 +624,7 @@ export function createTreasureChoiceScene(parent: HTMLElement, opts: SceneOption
 
     // 1. Measurement state machine. May show the options for this very frame (offer onset).
     runner.frame(ts);
+    ui.playEnabled(!runner.waitsForReady() || runner.canReady(ts));
 
     // 2. Visuals. The phase attribute (for tests and the dev page) is re-asserted every frame: under React strict
     // mode a cancelled first mount is destroyed after the second one wrote it.

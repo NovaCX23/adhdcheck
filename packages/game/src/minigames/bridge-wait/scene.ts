@@ -533,6 +533,7 @@ export function createBridgeWaitScene(parent: HTMLElement, opts: SceneOptions): 
 
     // 1. Measurement state machine. May apply the cue (lanterns + chime) for this very frame.
     runner.frame(ts);
+    ui.playEnabled(!runner.waitsForReady() || runner.canReady(ts));
 
     // 2. Visuals.
     if (pendingCross) {

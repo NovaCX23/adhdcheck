@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SessionMetricsSchema, type Trial } from "@adhdcheck/contracts";
 import { buildSchedule, DEFAULT_TASK, type TaskConfig } from "./logic";
 import { RESPONSE_WINDOW_MS } from "../wake-fireflies/logic";
+import { START_ENABLE_MS } from "../../pointer";
 import { BLOCK_INTRO_MS, BREAK_MIN_MS, CALIB_INTRO_MS, LATE_TAP_GRACE_MS, PRACTICE_INTRO_MS, LanternWatchRunner, type ActiveTrial, type RunData, type RunState } from "./runner";
 import { buildSessionMetrics } from "./session";
 
@@ -73,7 +74,7 @@ describe("instructions wait for the Start button (no timer) and then keep their 
         r.frame(ts);
       }
     };
-    run(100);
+    run(START_ENABLE_MS + 100); // the Start button is enabled once the instruction has been on screen START_ENABLE_MS
     return { r, run, ready: () => ((ts += 1), r.ready(ts)), now: () => ts, tap: () => ((ts += 1), r.pointerDown(ts, 5, 5, null)) };
   }
 
@@ -93,6 +94,29 @@ describe("instructions wait for the Start button (no timer) and then keep their 
     expect(d.r.state).toBe("calib-intro");
     d.run(200);
     expect(d.r.state).toBe("calib-practice");
+  });
+
+  it("I-1: a double tap on 'Tap to start' (60, 120, 250 ms) does not pass the first instruction; a later single tap does", () => {
+    const r = new LanternWatchRunner({ task: DEFAULT_TASK, seed: 42, anticipationMs: null });
+    const startTap = 1000;
+    r.pointerDown(startTap, 0, 0, null);
+    let ts = startTap;
+    const run = (to: number) => {
+      while (ts < to) {
+        ts += FRAME;
+        r.frame(ts);
+      }
+    };
+    run(startTap + 20);
+    expect(r.state).toBe("calib-intro");
+    for (const d of [60, 120, 250]) {
+      run(startTap + d);
+      expect(r.ready(startTap + d)).toBe("ignored");
+    }
+    expect(r.canReady(ts)).toBe(false);
+    run(startTap + START_ENABLE_MS + 100);
+    expect(r.canReady(ts)).toBe(true);
+    expect(r.ready(ts)).toBe("ready");
   });
 
   it("a second ready tap is ignored", () => {
@@ -289,6 +313,22 @@ describe("LanternWatchRunner, errors and off-target taps", () => {
   it("classifies anticipations against the threshold when one is configured", () => {
     const { data } = sim({ task: small, anticipationMs: 150, child: (tr, on) => [{ t: on + 60, lantern: tr.lantern }] });
     for (const t of data.trials.filter((x) => x.type !== "calibration")) expect(t.outcome).toBe("anticipation");
+  });
+
+  it("I-2: a session with anticipationMs set, where fast taps hit go AND no-go trials, still builds a valid SessionMetrics", () => {
+    const { data } = sim({ task: small, anticipationMs: 150, child: (tr, on) => [{ t: on + 60, lantern: tr.lantern }] });
+    expect(data.trials.some((t) => t.type === "nogo" && t.outcome === "anticipation")).toBe(true);
+    const m = buildSessionMetrics({
+      sessionId: "0b6f1c2e-3d4a-4b5c-8d6e-7f8091a2b3c4",
+      childId: "1c2d3e4f-5a6b-4c7d-9e8f-0a1b2c3d4e5f",
+      startedAt: "2026-10-20T10:00:00.000Z",
+      durationMs: data.duration_ms,
+      task: small,
+      device: { user_agent: "synthetic", pointer_type: "touch", screen_w: 1024, screen_h: 768, device_pixel_ratio: 1, est_refresh_hz: 60, cross_origin_isolated: false, timer_clock: "event.timeStamp" },
+      trials: data.trials,
+      offTargetTaps: data.off_target_taps,
+    });
+    expect(SessionMetricsSchema.safeParse(m).success).toBe(true);
   });
 
   it("calibration follows PR #27: a firefly left untapped for RESPONSE_WINDOW_MS is an omission at 0, 0", () => {

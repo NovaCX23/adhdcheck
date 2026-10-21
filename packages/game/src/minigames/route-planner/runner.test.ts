@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hintStep, neighbours, same } from "./logic";
+import { START_ENABLE_MS } from "../../pointer";
 import { BETWEEN_MS, IDLE_TIMEOUT_MS, PRACTICE_INTRO_MS, RoutePlannerRunner } from "./runner";
 import type { Cell, RoutePlannerResult } from "./types";
 
@@ -33,7 +34,7 @@ function setup() {
   };
   // The practice instruction waits for a tap (Hatem, 2026-10-21): this child taps "ready" a frame after it appears.
   const ready = () => {
-    tick(FRAME);
+    tick(START_ENABLE_MS + FRAME); // the Start button is enabled once the instruction has been on screen START_ENABLE_MS
     const kind = r.ready(ts + 1);
     tick(PRACTICE_INTRO_MS + 2 * FRAME);
     return kind;
@@ -58,10 +59,27 @@ describe("RoutePlannerRunner instructions wait for the Start button (no timer), 
     expect(s.r.board?.practice).toBe(true);
   });
 
+  it("I-1: a double tap on 'Tap to start' (60, 120, 250 ms) does not pass the first instruction; a later single tap does", () => {
+    const s = setup();
+    const startAt = s.now() + 300;
+    s.tick(300);
+    s.r.pointerDown(startAt, null); // the Start tap (any tap on the first screen)
+    s.tick(2 * FRAME);
+    expect(s.r.state).toBe("practice-intro");
+    for (const d of [60, 120, 250]) {
+      s.tick(Math.max(0, startAt + d - s.now()));
+      expect(s.r.ready(startAt + d)).toBe("ignored");
+    }
+    expect(s.r.canReady(s.now())).toBe(false);
+    s.tick(START_ENABLE_MS);
+    expect(s.r.canReady(s.now())).toBe(true);
+    expect(s.r.ready(s.now())).toBe("ready");
+  });
+
   it("a double tap (60, 120, 250 ms) after the Start button is ignored", () => {
     const s = setup();
     s.tap(null);
-    s.tick(2 * FRAME);
+    s.tick(START_ENABLE_MS + 2 * FRAME);
     const t0 = s.now() + 1;
     expect(s.r.ready(t0)).toBe("ready");
     for (const d of [60, 120, 250]) {

@@ -8,6 +8,7 @@
 // practice (not recorded, FR-02), then task.blocks blocks with a child-paced break between blocks, then done.
 // Calibration follows the rules of mini-game 0, PR #27 (../wake-fireflies/logic.ts): its waits, its practice
 // count, its response window, its trial mapping (hit or omission, omission at 0, 0) and its summary.
+import { START_ENABLE_MS } from "../../pointer";
 import type { Trial } from "@adhdcheck/contracts";
 import {
   buildCalibrationSchedule,
@@ -267,9 +268,14 @@ export class LanternWatchRunner {
     }
   }
 
+  /** True when the Start button of the current instruction accepts a tap: it has been on screen START_ENABLE_MS. */
+  canReady(ts: number): boolean {
+    return this.waitsForReady() && !this.readyRequested && ts - this.since >= START_ENABLE_MS;
+  }
+
   /** The child tapped the Start button of an instruction. A tap stamped before the instruction appeared is ignored. */
   ready(tMs: number): TapKind {
-    if (!this.waitsForReady() || this.readyRequested || tMs < this.since) return "ignored";
+    if (!this.waitsForReady() || this.readyRequested || tMs < this.since + START_ENABLE_MS) return "ignored";
     this.readyRequested = true;
     this.readyAtMs = tMs;
     return "ready";

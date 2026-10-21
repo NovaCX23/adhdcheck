@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { START_ENABLE_MS } from "../../pointer";
 import { BETWEEN_MS, BridgeWaitRunner, NARRATION_MS, PRACTICE_INTRO_MS, type RunState } from "./runner";
 import { PRACTICE_TRIALS } from "./logic";
 import type { BridgeWaitResult } from "./types";
@@ -50,6 +51,21 @@ describe("BridgeWaitRunner instructions wait for the Start button (no timer), th
     expect(r.state).toBe("practice-intro");
     for (let k = 0; k < 20; k++) step();
     expect(r.state).toBe("narration");
+  });
+
+  it("I-1: a double tap on 'Tap to start' (60, 120, 250 ms) does not pass the first instruction; a later single tap does", () => {
+    const { r, step, now } = setup();
+    r.pointerDown(1001);
+    step();
+    expect(r.state).toBe("practice-intro");
+    for (const d of [60, 120, 250]) {
+      while (now() < 1001 + d) step();
+      expect(r.ready(1001 + d)).toBe("ignored");
+    }
+    expect(r.canReady(now())).toBe(false);
+    while (now() < r.stateStartMs + START_ENABLE_MS + 20) step();
+    expect(r.canReady(now())).toBe(true);
+    expect(r.ready(now())).toBe("ready");
   });
 
   it("a ready tap stamped before the instruction appeared does not skip it", () => {

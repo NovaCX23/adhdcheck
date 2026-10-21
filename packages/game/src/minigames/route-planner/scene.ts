@@ -616,6 +616,7 @@ export function createRoutePlannerScene(parent: HTMLElement, opts: SceneOptions)
 
     // 1. Measurement state machine. May draw a new board (onBoard) for this very frame.
     runner.frame(ts);
+    ui.playEnabled(!runner.waitsForReady() || runner.canReady(ts));
 
     // 2. Visuals.
     updateTween(ts);

@@ -19,6 +19,7 @@ import {
 } from "./logic";
 import { isPrimaryPointer } from "../../pointer";
 import { createChime } from "./audio";
+import { START_ENABLE_MS } from "../../pointer";
 import { STRINGS } from "./strings";
 import type { RawTrial, ScheduledTrial, WakeFirefliesResult } from "./types";
 
@@ -188,7 +189,9 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
       const rect = canvas.getBoundingClientRect();
       const [bx, by, br] = playGeom();
       if (Math.hypot(e.clientX - rect.left - bx, e.clientY - rect.top - by) > br) return;
-      if (t < stageSince) return; // a tap stamped before the instruction appeared does not skip it
+      // A tap before the instruction has been on screen START_ENABLE_MS does not leave it (the first screen takes any
+      // tap on the button at once; the second tap of a double tap must not pass the practice instruction).
+      if (stage !== "intro" && t < stageSince + START_ENABLE_MS) return;
       startStage(stage === "intro" ? "practice-intro" : stage === "between" ? "real" : "practice", lastNow || performance.now());
       return;
     }
@@ -285,7 +288,11 @@ export async function mountWakeFireflies(parent: HTMLElement, opts: WakeFireflie
               ? STRINGS.practiceIntro
               : null;
     if (text) drawBubble(ctx!, text, lx + 52 * lumaS, ly - 70 * lumaS, Math.min(w - lx - 70 * lumaS, 420), lumaS);
-    if (stage === "intro" || stage === "practice-intro" || stage === "between") drawPlay(ctx!, ...playGeom(), now, reduceMotion);
+    if (stage === "intro" || stage === "practice-intro" || stage === "between") {
+      ctx!.globalAlpha = stage === "intro" || now - stageSince >= START_ENABLE_MS ? 1 : 0.4; // visibly disabled until then
+      drawPlay(ctx!, ...playGeom(), now, reduceMotion);
+      ctx!.globalAlpha = 1;
+    }
   }
 
   const loop = (now: number) => {

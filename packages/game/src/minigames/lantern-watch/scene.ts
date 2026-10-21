@@ -504,6 +504,7 @@ export function createLanternWatchScene(parent: HTMLElement, opts: SceneOptions)
 
     // 1. Measurement state machine. May light a lantern for this very frame.
     runner.frame(ts);
+    ui.playEnabled(!runner.waitsForReady() || runner.canReady(ts));
     if (built && !metrics) {
       try {
         const data = built as RunData;

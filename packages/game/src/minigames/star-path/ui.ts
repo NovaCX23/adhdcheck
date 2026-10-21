@@ -20,6 +20,8 @@ border:6px solid #fffdf7;transition:transform .25s cubic-bezier(.16,1,.3,1),opac
 .sp-play::after{content:"";position:absolute;left:50%;top:50%;margin:-26px 0 0 -16px;border-left:44px solid #fffdf7;border-top:26px solid transparent;border-bottom:26px solid transparent;filter:drop-shadow(0 3px 0 rgba(22,122,115,.6))}
 .sp-play::before{content:"";position:absolute;inset:-18px;border-radius:50%;border:5px solid rgba(255,253,247,.55);animation:sp-ring 1.8s ease-out infinite}
 .sp-play.off{opacity:0;transform:scale(.4)}
+.sp-play.wait{opacity:.4;filter:grayscale(.7)}
+.sp-play.wait::before{animation:none;opacity:0}
 @keyframes sp-ring{0%{transform:scale(.85);opacity:.9}100%{transform:scale(1.3);opacity:0}}
 .sp-hand{position:absolute;left:0;top:0;width:96px;height:118px;margin-left:-30px;opacity:0;transition:opacity .2s ease-out;will-change:transform}
 .sp-hand.on{opacity:1}
@@ -46,6 +48,8 @@ export interface Ui {
   play: (on: boolean) => void;
   /** True when the point (client pixels) is on the visible Start button: only a tap there leaves an instruction. */
   playHit: (clientX: number, clientY: number) => boolean;
+  /** False draws the Start button visibly disabled (the instruction has not been on screen long enough). */
+  playEnabled: (on: boolean) => void;
   /** Point the hand's fingertip at a screen point, or hide it with null. */
   handAt: (p: { x: number; y: number } | null) => void;
   destroy: () => void;
@@ -100,6 +104,9 @@ export function buildUi(parent: HTMLElement): Ui {
     },
     play(on) {
       play.classList.toggle("off", !on);
+    },
+    playEnabled(on) {
+      play.classList.toggle("wait", !on);
     },
     playHit(x, y) {
       return !play.classList.contains("off") && insideRect(x, y, play.getBoundingClientRect());

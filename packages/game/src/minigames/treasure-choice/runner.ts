@@ -6,6 +6,7 @@
 //
 // Constant time (FR-63): the gems come preDelay after the choosing tap and the choice ends slotMs after that same
 // tap, for either option. Only the child's own decision time and the frame grid can change the session length.
+import { START_ENABLE_MS } from "../../pointer";
 import { GEMS_LATER, GEMS_NOW, LATER_DELAY_MS, NOW_DELAY_MS, N_CHOICES, PRACTICE_CHOICES, SLOT_MS, buildSchedule, classifyTap, preDelayMs, summarise } from "./logic";
 import type { Choice, ChoiceRecord, ChoiceTap, ScheduledChoice, TreasureChoiceResult } from "./types";
 
@@ -90,9 +91,14 @@ export class TreasureChoiceRunner {
   }
 
   /** side: the option under the pointer, or null for a tap on neither. tMs: pointerdown event.timeStamp. */
+  /** True when the Start button of the current instruction accepts a tap: it has been on screen START_ENABLE_MS. */
+  canReady(ts: number): boolean {
+    return this.waitsForReady() && !this.readyRequested && ts - this.stateSince >= START_ENABLE_MS;
+  }
+
   /** The child tapped the Start button of an instruction. A tap stamped before the instruction appeared is ignored. */
   ready(tMs: number): TapKind {
-    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince) return "ignored";
+    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince + START_ENABLE_MS) return "ignored";
     this.readyRequested = true;
     this.readyAtMs = tMs;
     return "ready";

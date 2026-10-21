@@ -5,6 +5,7 @@ import { validSessionMetrics } from "../../../../../packages/contracts/src/fixtu
 import type { Consent, UploadResult } from "../../../lib/play-client";
 import { runPlayFlow } from "./flow";
 import * as chainModule from "./chain";
+import { START_ENABLE_MS } from "@adhdcheck/game";
 import { DEFAULT_SKIP_HOLD_MS, browserDom, createHoldDetector, createSessionChain, toMiniGameEntry, type ChainDeps, type ChainStep } from "./chain";
 import type { SessionGame } from "./game";
 
@@ -500,8 +501,9 @@ describe("browserDom.card waits for the child's tap", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   function fakeDoc() {
-    type Node = { tag: string; textContent: string; style: { cssText: string }; listeners: Record<string, Array<() => void>>; removed: boolean; attrs: Record<string, string>; kids: Node[] };
+    type Node = { disabled?: boolean; tag: string; textContent: string; style: { cssText: string }; listeners: Record<string, Array<() => void>>; removed: boolean; attrs: Record<string, string>; kids: Node[] };
     const made: Node[] = [];
+    void START_ENABLE_MS;
     vi.stubGlobal("document", {
       createElement: (tag: string) => {
         const node = {
@@ -538,9 +540,18 @@ describe("browserDom.card waits for the child's tap", () => {
     const card = browserDom.card({ appendChild() {} } as unknown as HTMLElement, 2, 5);
     let settled = false;
     void card.tapped.then(() => (settled = true));
-    await vi.advanceTimersByTimeAsync(10 * 60_000);
-    expect(settled).toBe(false); // ten minutes: still on screen
     const button = made.find((n) => n.tag === "button")!;
+    // I-1: a tap in the first moments does nothing (the button is disabled), at 60, 120 and 250 ms
+    for (const d of [60, 120, 250]) {
+      await vi.advanceTimersByTimeAsync(d === 60 ? 60 : d === 120 ? 60 : 130);
+      button.listeners.click?.forEach((fn) => fn());
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    expect(button.disabled).toBe(true);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(button.disabled).toBe(false);
+    expect(settled).toBe(false); // ten minutes: still on screen
     expect(button.textContent).toBe("Start");
     expect(made.some((n) => n.textContent === "Game 2 of 5")).toBe(true);
     expect(button.style.cssText).toMatch(/min-height:64px/);

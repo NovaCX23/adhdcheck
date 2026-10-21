@@ -1,6 +1,7 @@
 // Lifecycle of the mounted game, with a minimal fake DOM (vitest runs in node). No tap is needed after
 // the intro: every firefly that is not tapped falls asleep, so the game reaches its end by time alone.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { START_ENABLE_MS } from "../../pointer";
 import { mountWakeFireflies } from "./mount";
 
 type Listener = (e: unknown) => void;
@@ -50,6 +51,7 @@ function fakeEnvironment() {
     parent,
     // Every line of text drawn so far, joined: what the child could read.
     shown: () => texts.join(" "),
+    clearShown: () => void (texts.length = 0),
     // Default: on the Start button (centre x 400, y 252 of the 800 x 600 canvas, radius 54); (1, 1) is far from it.
     tap: (timeStamp: number, clientX = 400, clientY = 252) =>
       listeners.get("pointerdown")?.({ timeStamp, isPrimary: true, pointerType: "touch", button: 0, clientX, clientY }),
@@ -104,6 +106,25 @@ describe("mountWakeFireflies instructions wait for a tap", () => {
     env.tap(2010); // on the button
     env.runFrames(2016, 3000);
     expect(env.shown()).toContain("When a firefly glows");
+  });
+
+  it("I-1: a double tap on the first screen (60, 120, 250 ms) does not pass the practice instruction; a later single tap does", async () => {
+    const env = fakeEnvironment();
+    await mountWakeFireflies(env.parent, { seed: 7, trials: 1, onComplete: vi.fn() });
+    env.runFrames(0, 32);
+    env.tap(40); // first tap: the first screen -> the practice instruction
+    for (const d of [60, 120, 250]) {
+      env.runFrames(48, 40 + d);
+      env.tap(40 + d);
+    }
+    env.clearShown();
+    env.runFrames(300, 600);
+    expect(env.shown()).toContain("When a firefly glows"); // still the instruction
+    env.runFrames(608, 40 + START_ENABLE_MS + 100);
+    env.tap(40 + START_ENABLE_MS + 110); // enabled by now
+    env.clearShown();
+    env.runFrames(40 + START_ENABLE_MS + 120, 40 + START_ENABLE_MS + 400);
+    expect(env.shown()).not.toContain("When a firefly glows");
   });
 
   it("finishes once when the child taps through the instructions", async () => {

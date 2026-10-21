@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { STAR_INTERVAL_MS } from "./logic";
+import { START_ENABLE_MS } from "../../pointer";
 import { BETWEEN_MS, FEEDBACK_MS, LEAD_MS, PRACTICE_INTRO_MS, RECALL_TIMEOUT_MS, STAR_ON_MS, StarPathRunner, type Current } from "./runner";
 import type { StarPathResult } from "./types";
 
@@ -71,6 +72,25 @@ describe("StarPathRunner instructions wait for the Start button (no timer), then
     expect(r.state).toBe("practice-intro");
     for (let k = 0; k < 20; k++, ts += 16) r.frame(ts);
     expect(r.state).toBe("present");
+  });
+
+  it("I-1: a double tap on 'Tap to start' (60, 120, 250 ms) does not pass the first instruction; a later single tap does", () => {
+    const { r } = setup();
+    r.pointerDown(100, null);
+    let ts = 100;
+    const to = (t: number) => {
+      for (; ts < t; ts += 16) r.frame(ts);
+    };
+    to(140);
+    expect(r.state).toBe("practice-intro");
+    for (const d of [60, 120, 250]) {
+      to(100 + d);
+      expect(r.ready(100 + d)).toBe("ignored");
+    }
+    expect(r.canReady(ts)).toBe(false);
+    to(r.stateStartMs + START_ENABLE_MS + 20);
+    expect(r.canReady(ts)).toBe(true);
+    expect(r.ready(ts)).toBe("ready");
   });
 
   it("a ready tap stamped before the instruction appeared does not skip it", () => {

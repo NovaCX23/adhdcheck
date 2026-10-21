@@ -477,6 +477,7 @@ export function createStarPathScene(parent: HTMLElement, opts: SceneOptions): { 
 
     // 1. Measurement state machine. May light a star for this very frame.
     runner.frame(ts);
+    ui.playEnabled(!runner.waitsForReady() || runner.canReady(ts));
 
     // 2. Visuals.
     const now = performance.now();

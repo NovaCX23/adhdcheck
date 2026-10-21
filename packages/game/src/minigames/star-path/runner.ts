@@ -3,6 +3,7 @@
 // callback timestamp. A star lit in frame(ts) is drawn by the render call of that same callback, so ts is its
 // onset (research/03 section 2, method 4), as in Bridge Wait. pointerDown() takes the pointerdown
 // event.timeStamp and the star the scene found under the finger (null for none).
+import { START_ENABLE_MS } from "../../pointer";
 import { mulberry32 } from "../bridge-wait/logic";
 import {
   MAX_FAILURES_PER_LENGTH,
@@ -101,9 +102,14 @@ export class StarPathRunner {
     return this.stateSince;
   }
 
+  /** True when the Start button of the current instruction accepts a tap: it has been on screen START_ENABLE_MS. */
+  canReady(ts: number): boolean {
+    return this.waitsForReady() && !this.readyRequested && ts - this.stateSince >= START_ENABLE_MS;
+  }
+
   /** The child tapped the Start button of an instruction. A tap stamped before the instruction appeared is ignored. */
   ready(tMs: number): TapKind {
-    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince) return "ignored";
+    if (!this.waitsForReady() || this.readyRequested || tMs < this.stateSince + START_ENABLE_MS) return "ignored";
     this.readyRequested = true;
     this.readyAtMs = tMs;
     return "ready";

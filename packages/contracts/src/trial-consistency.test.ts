@@ -10,6 +10,8 @@ const ok = [
   { ...base, type: "go", responded: true, rt_ms: 100, outcome: "anticipation" },
   { ...base, type: "nogo", responded: false, rt_ms: null, outcome: "correct_reject" },
   { ...base, type: "nogo", responded: true, rt_ms: 300, outcome: "commission" },
+  // classify() (lantern-watch/logic.ts, research/04 line 234) returns "anticipation" for a fast tap on ANY trial type
+  { ...base, type: "nogo", responded: true, rt_ms: 100, outcome: "anticipation" },
   { ...base, type: "calibration", responded: true, rt_ms: 350, outcome: "hit" },
   { ...base, type: "calibration", responded: false, rt_ms: null, outcome: "omission" },
 ];

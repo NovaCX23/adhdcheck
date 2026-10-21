@@ -5,6 +5,7 @@ import {
   type MiniGameId,
   type SessionMetrics,
 } from "@adhdcheck/contracts";
+import { START_ENABLE_MS } from "@adhdcheck/game";
 import type { BridgeWaitResult, RoutePlannerResult, StarPathResult, TreasureChoiceResult } from "@adhdcheck/game";
 import type { SessionGame, SessionGameRun } from "./game";
 import { transitionText } from "./strings";
@@ -273,11 +274,21 @@ export const browserDom: ChainDom = {
     el.appendChild(box);
     let settle: () => void = () => {};
     const tapped = new Promise<void>((resolve) => (settle = resolve));
-    button.addEventListener("click", () => settle());
+    // Disabled (and drawn so) for the first START_ENABLE_MS: a stray tap right after the last game must not skip the card.
+    button.disabled = true;
+    button.style.opacity = "0.4";
+    const enable = setTimeout(() => {
+      button.disabled = false;
+      button.style.opacity = "1";
+    }, START_ENABLE_MS);
+    button.addEventListener("click", () => {
+      if (!button.disabled) settle();
+    });
     // Removing the card (the page is left) also settles `tapped`, so the chain can notice it was destroyed and stop.
     return {
       tapped,
       remove: () => {
+        clearTimeout(enable);
         box.remove();
         settle();
       },
