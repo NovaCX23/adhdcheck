@@ -27,7 +27,8 @@ export const DataQualitySchema = z.strictObject({
 export const ScoreResultSchema = z.strictObject({
   schema_version: z.literal("1.0"),
   session_id: z.uuid(),
-  scoring_method: z.literal("rules_v0"),
+  // rules_v0 = the placeholder scorer (rows already stored); rules_v1 = real indicators (docs/02 FR-25: a new value per change).
+  scoring_method: z.enum(["rules_v0", "rules_v1"]),
   validated: z.boolean(),
   indicators: IndicatorsSchema,
   flags: z.array(z.string()),

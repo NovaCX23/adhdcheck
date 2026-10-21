@@ -5,10 +5,14 @@ import type { SessionMetrics } from "@adhdcheck/contracts";
 import { isParentNote } from "./ResultCard";
 
 describe("isParentNote", () => {
-  it("hides the placeholder scorer's developer note from parents", () => {
+  it("hides the scorer's developer note from parents", () => {
     const notes = scoreSession(validSessionMetrics as SessionMetrics).data_quality.notes;
-    expect(notes.length).toBeGreaterThan(0); // the stub really writes one, so this test means something
+    expect(notes.length).toBeGreaterThan(0); // thresholds.v0.json is all null, so the scorer really writes one
     expect(notes.filter(isParentNote)).toEqual([]);
+  });
+
+  it("hides the old placeholder note too", () => {
+    expect(isParentNote("stub: scoring rules not implemented yet")).toBe(false);
   });
 
   it("keeps every other data-quality note", () => {

@@ -3,6 +3,7 @@ import { SCORE_DISCLAIMER } from "@adhdcheck/contracts";
 import { BAND_TEXT, S } from "../app/parent/strings";
 import type { SessionResult } from "./data/parent";
 import { formatDate } from "./format";
+import { showsIndicators } from "./indicators";
 
 // Parent report (D-05 and D-05b, DECIDED, Hatem, 2026-10-20; FR-48). The only paid feature: 9.99 EUR,
 // one-off per report, downloadable by the parent who paid, who is emailed a link to it (R3-D1). It holds only
@@ -31,7 +32,7 @@ export function buildReport(result: SessionResult, nickname: string): ReportMode
     { kind: "text", text: SCORE_DISCLAIMER },
   ];
   if (band.support) lines.push({ kind: "text", text: band.support });
-  if (score.band !== "insufficient_data") {
+  if (showsIndicators(score)) {
     lines.push({ kind: "heading", text: S.result.indicators });
     for (const k of RATE_KEYS) lines.push({ kind: "text", text: `${S.indicator[k]}: ${pct(score.indicators[k])}` });
     lines.push({ kind: "text", text: `${S.indicator.rt_cv}: ${score.indicators.rt_cv.toFixed(2)}` });

@@ -10,14 +10,15 @@ import { ReportDownload } from "./ReportDownload";
 
 const RATE_KEYS = ["omission_rate", "commission_rate", "off_target_tap_rate"] as const;
 
-// Notes meant for developers (the placeholder scorer in packages/scoring writes "stub: ...") are not shown
+// Notes meant for developers (packages/scoring writes "dev: ..." and the old placeholder "stub: ...") are not shown
 // to parents. Every other data-quality note is.
 export function isParentNote(note: string) {
-  return !/^stub:/i.test(note.trim());
+  return !/^(stub|dev):/i.test(note.trim());
 }
 
 // Relative import: the tests render this card, and Vitest has no "@/" alias.
 import { formatDate } from "../../../lib/format";
+import { showsIndicators } from "../../../lib/indicators";
 export { formatDate };
 
 function Bar({ label, value, shown }: { label: string; value: number; shown: string }) {
@@ -62,7 +63,7 @@ export function ResultCard({ result }: { result: SessionResult }) {
             </ul>
           </div>
         )}
-        {score.band !== "insufficient_data" && (
+        {showsIndicators(score) && (
           <div>
             <h4 className="font-display text-lg font-semibold">{S.result.indicators}</h4>
             <div className="mt-3 space-y-3">
