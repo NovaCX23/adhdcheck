@@ -5,7 +5,6 @@ import { validSessionMetrics } from "../../../../../packages/contracts/src/fixtu
 import type { Consent, UploadResult } from "../../../lib/play-client";
 import { runPlayFlow } from "./flow";
 import * as chainModule from "./chain";
-import { START_ENABLE_MS } from "@adhdcheck/game";
 import { DEFAULT_SKIP_HOLD_MS, browserDom, createHoldDetector, createSessionChain, toMiniGameEntry, type ChainDeps, type ChainStep } from "./chain";
 import type { SessionGame } from "./game";
 
@@ -503,7 +502,6 @@ describe("browserDom.card waits for the child's tap", () => {
   function fakeDoc() {
     type Node = { disabled?: boolean; tag: string; textContent: string; style: { cssText: string }; listeners: Record<string, Array<() => void>>; removed: boolean; attrs: Record<string, string>; kids: Node[] };
     const made: Node[] = [];
-    void START_ENABLE_MS;
     vi.stubGlobal("document", {
       createElement: (tag: string) => {
         const node = {
@@ -542,8 +540,10 @@ describe("browserDom.card waits for the child's tap", () => {
     void card.tapped.then(() => (settled = true));
     const button = made.find((n) => n.tag === "button")!;
     // I-1: a tap in the first moments does nothing (the button is disabled), at 60, 120 and 250 ms
-    for (const d of [60, 120, 250]) {
-      await vi.advanceTimersByTimeAsync(d === 60 ? 60 : d === 120 ? 60 : 130);
+    let elapsed = 0;
+    for (const at of [60, 120, 250]) {
+      await vi.advanceTimersByTimeAsync(at - elapsed);
+      elapsed = at;
       button.listeners.click?.forEach((fn) => fn());
     }
     await vi.advanceTimersByTimeAsync(0);

@@ -17,9 +17,8 @@ import {
   summarise,
   toContractTrial,
 } from "./logic";
-import { isPrimaryPointer } from "../../pointer";
+import { START_ENABLE_MS, isPrimaryPointer } from "../../pointer";
 import { createChime } from "./audio";
-import { START_ENABLE_MS } from "../../pointer";
 import { STRINGS } from "./strings";
 import type { RawTrial, ScheduledTrial, WakeFirefliesResult } from "./types";
 

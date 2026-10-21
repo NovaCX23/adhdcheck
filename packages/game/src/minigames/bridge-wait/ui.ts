@@ -19,7 +19,7 @@ border:6px solid #fffdf7;transition:transform .25s cubic-bezier(.16,1,.3,1),opac
 .bw-play::after{content:"";position:absolute;left:50%;top:50%;margin:-26px 0 0 -16px;border-left:44px solid #fffdf7;border-top:26px solid transparent;border-bottom:26px solid transparent;filter:drop-shadow(0 3px 0 rgba(22,122,115,.6))}
 .bw-play::before{content:"";position:absolute;inset:-18px;border-radius:50%;border:5px solid rgba(255,253,247,.55);animation:bw-ring 1.8s ease-out infinite}
 .bw-play.off{opacity:0;transform:scale(.4)}
-.bw-play.wait{opacity:.4;filter:grayscale(.7)}
+.bw-play.wait:not(.off){opacity:.4;filter:grayscale(.7)}
 .bw-play.wait::before{animation:none;opacity:0}
 @keyframes bw-ring{0%{transform:scale(.85);opacity:.9}100%{transform:scale(1.3);opacity:0}}
 .bw-hand{position:absolute;left:50%;top:76%;width:96px;height:118px;margin-left:-30px;opacity:0;transition:opacity .2s ease-out}
@@ -79,6 +79,14 @@ export function buildUi(parent: HTMLElement): Ui {
   parent.append(style, root);
 
   let w = 0;
+  // The Start button is hidden (off) after an accepted tap, greyed (wait) while it is visible but not yet enabled. The two
+  // never combine: a hidden button must not show as a faded ghost.
+  let shown = true;
+  let enabled = true;
+  const paint = () => {
+    play.classList.toggle("off", !shown);
+    play.classList.toggle("wait", shown && !enabled);
+  };
   return {
     root,
     say(t) {
@@ -101,13 +109,15 @@ export function buildUi(parent: HTMLElement): Ui {
       tail.style.left = `${tailX.toFixed(1)}px`;
     },
     play(on) {
-      play.classList.toggle("off", !on);
+      shown = on;
+      paint();
     },
     playEnabled(on) {
-      play.classList.toggle("wait", !on);
+      enabled = on;
+      paint();
     },
     playHit(x, y) {
-      return !play.classList.contains("off") && insideRect(x, y, play.getBoundingClientRect());
+      return shown && insideRect(x, y, play.getBoundingClientRect());
     },
     hand(on) {
       hand.classList.toggle("on", on);
